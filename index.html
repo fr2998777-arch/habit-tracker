@@ -23,7 +23,7 @@
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:16px;-webkit-font-smoothing:antialiased;overscroll-behavior:none;}
 body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill-available;}
 
-.header{padding:2rem 1.5rem 1rem;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);}
+.header{padding:env(safe-area-inset-top, 3rem) 1.5rem 1rem;padding-top:max(env(safe-area-inset-top), 3rem);position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);}
 .header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.25rem;}
 .app-title{font-family:'Syne',sans-serif;font-size:1.75rem;font-weight:700;letter-spacing:-0.02em;}
 .date-label{font-size:0.82rem;color:var(--text-muted);letter-spacing:0.06em;text-transform:uppercase;margin-top:0.25rem;}
@@ -48,10 +48,14 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
 .habit-actions{display:flex;align-items:center;gap:0.5rem;flex-shrink:0;}
 .check-box{width:26px;height:26px;border-radius:50%;border:2px solid var(--text-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:border-color 0.2s,background 0.2s;}
 .habit-card.done .check-box{border-color:var(--green);background:var(--green);}
+.morning-expand-card.done .check-box{border-color:var(--green);background:var(--green);}
 .check-icon{opacity:0;transform:scale(0.5);transition:opacity 0.2s,transform 0.2s;}
 .habit-card.done .check-icon{opacity:1;transform:scale(1);}
 .check-box.done .check-icon{opacity:1;transform:scale(1);}
 .morning-expand-card.done .check-icon{opacity:1;transform:scale(1);}
+.habit-card.done .habit-name{color:var(--green);}
+.morning-expand-card.done .habit-name{color:var(--green);}
+.morning-expand-card.done{background:#1A2420;border-color:rgba(74,222,128,0.3);}
 .icon-btn{background:none;border:none;color:var(--text-dim);font-size:1rem;cursor:pointer;padding:4px 6px;border-radius:8px;transition:color 0.2s,background 0.2s;-webkit-tap-highlight-color:transparent;line-height:1;}
 .icon-btn:active{color:var(--red);background:var(--red-dim);}
 .note-toggle{font-size:0.78rem;color:var(--text-muted);cursor:pointer;margin-top:0.65rem;padding-left:3.4rem;display:block;transition:color 0.2s;}
@@ -326,7 +330,9 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
 .banner.show{animation:bannerSlide 0.4s ease-out;}
 .pie-fill-animated{transition:stroke-dashoffset 0.5s cubic-bezier(0.4,0,0.2,1);}
 
-/* RANGE SELECTOR */
+/* NUTRITION HISTORY */
+.nh-expand.open{display:block !important;}
+
 .range-selector-row{display:flex;gap:5px;flex-wrap:wrap;margin:0.5rem 0 0.75rem;}
 .range-btn{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:0.72rem;font-family:'Syne',sans-serif;font-weight:600;color:var(--text-muted);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:all 0.15s;}
 .range-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent);}
@@ -402,8 +408,7 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
   <div class="view" id="viewWellness">
     <div class="fitness-subnav">
       <button class="subnav-btn active" id="subnavCalories" onclick="switchWellness('Calories')">Nutrition</button>
-      <button class="subnav-btn" id="subnavSleep" onclick="switchWellness('Sleep')">Sleep</button>
-      <button class="subnav-btn" id="subnavSauna" onclick="switchWellness('Sauna')">Sauna</button>
+      <button class="subnav-btn" id="subnavRecovery" onclick="switchWellness('Recovery')">Recovery</button>
     </div>
     <!-- CALORIES -->
     <div class="fitness-pane active" id="paneCalories">
@@ -551,9 +556,15 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
         <div id="microList"></div>
       </div>
 
+      <!-- HISTORY SECTION -->
+      <div class="section-head">Last 7 days</div>
+      <div class="nutr-card" id="nutrHistorySummary"></div>
+      <div class="nutr-card" id="nutrHistoryList" style="padding:0;overflow:hidden;"></div>
+
     </div>
-    <!-- SLEEP -->
-    <div class="fitness-pane" id="paneSleep">
+    <!-- RECOVERY -->
+    <div class="fitness-pane" id="paneRecovery">
+      <!-- SLEEP -->
       <div class="section-head" style="margin-top:0;">Log sleep</div>
       <div class="cardio-form">
         <div class="cardio-inputs-grid" style="margin-top:0;">
@@ -564,29 +575,27 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
               <span style="color:var(--text-muted);font-size:0.85rem;">hrs</span>
             </div>
           </div>
-          <div>
-            <label class="cardio-label">Quality</label>
-            <select class="field-input" id="sleepQuality" style="margin-bottom:0;">
-              <option value="5">Great</option>
-              <option value="4">Good</option>
-              <option value="3">Okay</option>
-              <option value="2">Poor</option>
-              <option value="1">Terrible</option>
-            </select>
-          </div>
         </div>
         <div style="margin-top:0.75rem;">
           <label class="cardio-label">Notes (optional)</label>
-          <input class="field-input" id="sleepNotes" placeholder="e.g. woke up twice, felt rested" style="margin-bottom:0;"/>
+          <input class="field-input" id="sleepNotes" placeholder="e.g. woke up twice, slept great, restless" style="margin-bottom:0;"/>
         </div>
         <button class="finish-btn" style="width:100%;padding:0.85rem;border-radius:12px;font-size:0.95rem;margin-top:0.75rem;" onclick="logSleep()">Log sleep ✓</button>
       </div>
       <div class="section-head">Sleep history</div>
       <div id="sleepHistoryList"></div>
-    </div>
-    <!-- SAUNA -->
-    <div class="fitness-pane" id="paneSauna">
-      <div class="section-head" style="margin-top:0;">Log sauna session</div>
+
+      <!-- MORNING ENERGY -->
+      <div class="section-head">Morning energy</div>
+      <div class="cardio-form">
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.6rem;">Log this first thing — before coffee or food — for the most accurate reading.</p>
+        <div id="energyScaleRow" style="display:flex;gap:6px;justify-content:space-between;"></div>
+      </div>
+      <div class="section-head">Energy history</div>
+      <div id="energyHistoryList"></div>
+
+      <!-- SAUNA -->
+      <div class="section-head">Log sauna session</div>
       <div class="cardio-form">
         <div class="cardio-inputs-grid" style="margin-top:0;">
           <div>
@@ -1200,6 +1209,7 @@ let calGoal=ld('cg7',1500);
 let workouts=ld('wo7',DEFAULT_WORKOUTS);
 let workoutHistory=ld('wh7',[]);
 let sleepHistory=ld('sl7',[]);
+let energyLog=ld('energy7',[]);
 let saunaHistory=ld('sa7',[]);
 let cardioHistory=ld('ch7',[]);
 let morningLog=ld('mr7',{});
@@ -1306,13 +1316,13 @@ function buildMorningCard(){
   const morningSubText=mDone===3?'All done today \u2713':(mDone+' / 3 completed');
   const mPieSVG=morningPieSVG(mDone);
   const chkSVG='<svg class="check-icon" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7L5.5 10L11.5 4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  return '<div class="morning-expand-card" id="morningExpandCard" style="margin-bottom:0.6rem;margin-top:0;">'
+  const morningDone=mDone===3;
+  return '<div class="morning-expand-card'+(morningDone?' done':'')+'" id="morningExpandCard" style="margin-bottom:0.6rem;margin-top:0;'+(morningDone?'background:#1A2420;border-color:rgba(74,222,128,0.3);':'')+'">'
     +'<div class="morning-expand-header" onclick="toggleMorningExpand()">'
     +'<div style="display:flex;align-items:center;gap:0.85rem;flex:1;min-width:0;">'
     +'<div style="width:2.4rem;height:2.4rem;border-radius:50%;background:#231E14;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
     +'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>'
     +'</div><div><div style="font-family:\'Syne\',sans-serif;font-size:0.98rem;font-weight:600;">Morning routine</div>'
-    +'<span id="morningAllDoneBadge" style="display:'+(mDone===3?'inline-flex':'none')+';align-items:center;gap:3px;background:rgba(74,222,128,0.12);border:0.5px solid #4ADE80;border-radius:20px;padding:2px 8px;font-size:0.72rem;color:#4ADE80;font-weight:500;animation:badgeIn 0.35s ease-out;"><svg width="9" height="9" viewBox="0 0 14 14" fill="none"><path d="M2.5 7L5.5 10L11.5 4" stroke="#4ADE80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg> All done!</span>'
     +'</div></div>'
     +'<div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0;">'
     +'<button class="icon-btn" onclick="event.stopPropagation();askDelete(\'habit\',\'morning\',\'Morning routine\')">&#x2715;</button>'
@@ -1477,12 +1487,12 @@ function render(){
       const today=todayKey();
       const dayTotal=readLog.filter(e=>e.date===today).reduce((s,e)=>s+e.mins,0);
       const activeBook=books.active.find(b=>b.id===_activeBookId)||books.active[0]||null;
-      return `<div class="morning-expand-card" id="hc-read" style="margin-bottom:0.6rem;">
+      return `<div class="morning-expand-card${done?' done':''}" id="hc-read" style="margin-bottom:0.6rem;${done?'background:#1A2420;border-color:rgba(74,222,128,0.3);':''}">
         <div class="morning-expand-header" onclick="toggleReadExpand()">
           <div style="display:flex;align-items:center;gap:0.85rem;flex:1;min-width:0;">
             ${_ic}
             <div style="flex:1;min-width:0;">
-              <div style="font-family:'Syne',sans-serif;font-size:0.98rem;font-weight:600;">${h.name}</div>
+              <div style="font-family:'Syne',sans-serif;font-size:0.98rem;font-weight:600;${done?'color:var(--green)':''}">${h.name}</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0;">
@@ -1490,7 +1500,7 @@ function render(){
             <span id="readExpandArrow" style="display:flex;align-items:center;color:var(--text-dim);">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
-            <div class="check-box" onclick="event.stopPropagation();toggleHabit('${h.id}')" style="cursor:pointer;${done?'border-color:var(--green);background:var(--green);':''}">${chk}</div>
+            <div class="check-box${done?' done':''}" onclick="event.stopPropagation();toggleHabit('${h.id}')" style="cursor:pointer;${done?'border-color:var(--green);background:var(--green);':''}">${chk}</div>
           </div>
         </div>
         <div class="morning-expand-body" id="readExpandBody">
@@ -1521,7 +1531,7 @@ function render(){
       const todayMins=todayStudy.reduce((s,e)=>s+(e.hours*60+e.mins),0);
       const h2=Math.floor(todayMins/60);const m2=todayMins%60;
       const studySub=todayMins>0?((h2?h2+'h ':'')+( m2?m2+'m':''))+' studied today':'Tap to log session';
-      return `<div class="morning-expand-card" id="hc-study" style="margin-bottom:0.6rem;">
+      return `<div class="morning-expand-card${done?' done':''}" id="hc-study" style="margin-bottom:0.6rem;${done?'background:#1A2420;border-color:rgba(74,222,128,0.3);':''}">
         <div class="morning-expand-header" onclick="toggleStudyExpand()">
           <div style="display:flex;align-items:center;gap:0.85rem;flex:1;min-width:0;">
             ${_ic}
@@ -1534,7 +1544,7 @@ function render(){
             <span id="studyExpandArrow" style="display:flex;align-items:center;color:var(--text-dim);">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
-            <div class="check-box" onclick="event.stopPropagation();toggleHabit('${h.id}')" style="cursor:pointer;${done?'border-color:var(--green);background:var(--green);':''}">${chk}</div>
+            <div class="check-box${done?' done':''}" onclick="event.stopPropagation();toggleHabit('${h.id}')" style="cursor:pointer;${done?'border-color:var(--green);background:var(--green);':''}">${chk}</div>
           </div>
         </div>
         <div class="morning-expand-body" id="studyExpandBody">
@@ -1566,7 +1576,7 @@ function render(){
     const section=habitSection(h);
     const hasArrow=section==='Daily routines'||section==='Personal goals';
     if(hasArrow){
-      return `<div class="morning-expand-card" id="hc-${h.id}" style="margin-bottom:0.6rem;">
+      return `<div class="morning-expand-card${done?' done':''}" id="hc-${h.id}" style="margin-bottom:0.6rem;${done?'background:#1A2420;border-color:rgba(74,222,128,0.3);':''}">
         <div class="morning-expand-header" onclick="toggleHabitExpand('${h.id}')">
           <div style="display:flex;align-items:center;gap:0.85rem;flex:1;min-width:0;">
             ${_ic}
@@ -1579,7 +1589,7 @@ function render(){
             <span id="harrow-${h.id}" style="display:flex;align-items:center;color:var(--text-dim);">
               <svg id="harrowsvg-${h.id}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
-            <div class="check-box" onclick="event.stopPropagation();toggleHabit('${h.id}')" style="cursor:pointer;${done?'border-color:var(--green);background:var(--green);':''}">${chk}</div>
+            <div class="check-box${done?' done':''}" onclick="event.stopPropagation();toggleHabit('${h.id}')" style="cursor:pointer;${done?'border-color:var(--green);background:var(--green);':''}">${chk}</div>
           </div>
         </div>
         <div class="morning-expand-body" id="hexp-${h.id}">
@@ -1682,6 +1692,104 @@ let nutrGoals=ld('ng7',{
 });
 
 // ── CALORIES ──
+function renderNutritionHistory(){
+  const summaryEl=document.getElementById('nutrHistorySummary');
+  const listEl=document.getElementById('nutrHistoryList');
+  if(!summaryEl||!listEl)return;
+
+  // Get last 7 days (excluding today, most recent first)
+  const today=todayKey();
+  const days=[];
+  for(let i=1;i<=7;i++){
+    const d=new Date(today+'T12:00:00');
+    d.setDate(d.getDate()-i);
+    days.push(d.toISOString().slice(0,10));
+  }
+
+  const dayData=days.map(date=>{
+    const ms=meals[date]||[];
+    const consumed=ms.reduce((s,m)=>s+m.cals,0);
+    const totals={protein:0,carbs:0,fat:0,fiber:0,sugar:0};
+    ms.forEach(m=>{if(m.nutrients)Object.keys(totals).forEach(k=>{totals[k]+=(m.nutrients[k]||0);});});
+    return {date,ms,consumed,totals};
+  });
+
+  const loggedDays=dayData.filter(d=>d.ms.length>0);
+
+  // SUMMARY CARD
+  if(!loggedDays.length){
+    summaryEl.innerHTML='<div style="font-size:0.85rem;color:var(--text-muted);text-align:center;padding:0.5rem 0;">No meals logged in the last 7 days yet.</div>';
+  } else {
+    const avgCals=Math.round(loggedDays.reduce((s,d)=>s+d.consumed,0)/loggedDays.length);
+    const underCount=loggedDays.filter(d=>d.consumed<=calGoal).length;
+    const overCount=loggedDays.filter(d=>d.consumed>calGoal).length;
+    const avgMacros={};
+    ['protein','carbs','fat','fiber','sugar'].forEach(k=>{
+      avgMacros[k]=Math.round(loggedDays.reduce((s,d)=>s+d.totals[k],0)/loggedDays.length);
+    });
+    summaryEl.innerHTML='<div style="font-family:\'Syne\',sans-serif;font-size:0.95rem;font-weight:600;margin-bottom:2px;">This week vs your goal</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px;">'
+      +'<div style="background:var(--surface2);border-radius:10px;padding:9px;text-align:center;"><div style="font-size:1rem;font-weight:600;font-family:\'Syne\',sans-serif;">'+avgCals+'</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em;">Avg kcal</div></div>'
+      +'<div style="background:var(--surface2);border-radius:10px;padding:9px;text-align:center;"><div style="font-size:1rem;font-weight:600;font-family:\'Syne\',sans-serif;color:var(--green);">'+underCount+'/'+loggedDays.length+'</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em;">Under goal</div></div>'
+      +'<div style="background:var(--surface2);border-radius:10px;padding:9px;text-align:center;"><div style="font-size:1rem;font-weight:600;font-family:\'Syne\',sans-serif;color:var(--red);">'+overCount+'/'+loggedDays.length+'</div><div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em;">Over goal</div></div>'
+      +'</div>'
+      +'<div style="margin-top:10px;font-size:0.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Avg macros this week</div>'
+      +['protein','carbs','fat','fiber','sugar'].map((k,ki,arr)=>{
+        const n=NUTR_DEFAULTS.macros[k];
+        const goal=nutrGoals[k]||n.goal;
+        const val=avgMacros[k];
+        const pct=Math.min(Math.round((val/goal)*100),100);
+        const color=pct>=90?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
+        const border=ki===arr.length-1?'none':'0.5px solid var(--border)';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:'+border+';font-size:0.82rem;"><span style="color:var(--text-muted);">'+n.label+'</span><span style="font-weight:500;color:'+color+';">'+val+n.unit+' / '+goal+n.unit+(pct>=90?' ✓':'')+'</span></div>';
+      }).join('');
+  }
+
+  // DAY LIST
+  if(!loggedDays.length){
+    listEl.innerHTML='';
+    return;
+  }
+  const dayLabels=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  listEl.innerHTML=loggedDays.map((d,idx)=>{
+    const dt=new Date(d.date+'T12:00:00');
+    const dayName=idx===0?'Yesterday':dayLabels[dt.getDay()];
+    const dateStr=dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const pct=d.consumed/calGoal;
+    const color=pct<=0.95?'var(--green)':pct<=1.05?'var(--amber)':'var(--red)';
+    const expandId='nh_'+d.date.replace(/-/g,'');
+    const mealsHtml=d.ms.map(m=>{
+      const nutrPills=m.nutrients?['protein','carbs','fat'].map(k=>{
+        const abbr={protein:'P',carbs:'C',fat:'F'}[k];
+        return m.nutrients[k]?abbr+' '+Math.round(m.nutrients[k])+'g':'';
+      }).filter(Boolean).join(' · '):'';
+      return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:0.8rem;">'
+        +'<div><div style="color:var(--text);font-weight:500;">'+m.name+'</div>'
+        +(nutrPills?'<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">'+nutrPills+'</div>':'')
+        +'</div><span style="color:var(--amber);font-weight:500;font-family:\'Syne\',sans-serif;white-space:nowrap;">'+m.cals+' kcal</span>'
+        +'</div>';
+    }).join('');
+    const miniNutr='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;">'
+      +['protein','carbs','fat','fiber'].map(k=>{
+        const n=NUTR_DEFAULTS.macros[k];
+        return '<div style="background:var(--surface2);border-radius:8px;padding:6px 8px;"><div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;">'+n.label+'</div><div style="font-size:0.82rem;font-weight:500;margin-top:1px;">'+Math.round(d.totals[k]*10)/10+n.unit+'</div></div>';
+      }).join('')
+      +'</div>';
+    return '<div style="border-bottom:0.5px solid var(--border);">'
+      +'<div style="display:flex;align-items:center;gap:10px;padding:10px 1rem;cursor:pointer;" onclick="document.getElementById(\''+expandId+'\').classList.toggle(\'open\')">'
+      +'<div style="width:7px;height:7px;border-radius:50%;background:'+color+';flex-shrink:0;"></div>'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:0.85rem;font-weight:500;color:var(--text);">'+dayName+'</div>'
+      +'<div style="font-size:0.72rem;color:var(--text-muted);margin-top:1px;">'+dateStr+'</div></div>'
+      +'<span style="font-size:0.85rem;font-weight:600;font-family:\'Syne\',sans-serif;color:'+color+';">'+d.consumed+' kcal</span>'
+      +'<span style="font-size:0.7rem;color:var(--text-muted);">▾</span>'
+      +'</div>'
+      +'<div id="'+expandId+'" class="nh-expand" style="display:none;padding:0 1rem 12px;">'
+      +mealsHtml+miniNutr
+      +'</div>'
+      +'</div>';
+  }).join('');
+}
+
 function renderCals(){
   const ms=getTodayMeals();
   const consumed=ms.reduce((s,m)=>s+m.cals,0);
@@ -1700,6 +1808,7 @@ function renderCals(){
   renderNutrition();
   renderSavedMealsSection();
   renderSupplementsSection();
+  renderNutritionHistory();
 }
 
 function renderMealList(){
@@ -1873,9 +1982,30 @@ async function fetchFoodResults(query){
   resultsEl.classList.add('open');
 }
 
+// Relevance scoring — prioritizes simple/generic foods that closely match the search term
+function foodRelevanceScore(name,query){
+  const n=name.toLowerCase().trim();
+  const q=query.toLowerCase().trim();
+  const firstWord=n.split(/[,\s]/)[0];
+  let score=0;
+  // Exact match to first word is best (e.g. "Banana, raw" for "banana")
+  if(firstWord===q)score+=100;
+  else if(n.startsWith(q))score+=70;
+  else if(n.includes(', '+q)||n.includes(' '+q+','))score+=40;
+  else if(n.includes(q))score+=10;
+  // Penalize longer/more complex names (more commas = more processed/specific)
+  const commaCount=(n.match(/,/g)||[]).length;
+  score-=commaCount*3;
+  // Penalize very long names (likely branded/compound products)
+  score-=Math.max(0,n.length-30)*0.2;
+  // Slight bonus for "raw" or basic prep words
+  if(/\braw\b/.test(n))score+=5;
+  return score;
+}
+
 async function fetchUSDA(query){
   try{
-    const res=await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Foundation,SR%20Legacy&pageSize=6&api_key=${USDA_KEY}`);
+    const res=await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Foundation,SR%20Legacy&pageSize=10&api_key=${USDA_KEY}`);
     const data=await res.json();
     if(!data.foods?.length)return[];
     return data.foods.map(f=>{
@@ -1885,7 +2015,9 @@ async function fetchUSDA(query){
         if(key)nutrByName[key]=n.value||0;
       });
       return{source:'usda',name:f.description,category:f.foodCategory||'',nutrients:nutrByName,servingSize:null,brand:null};
-    }).filter(f=>f.nutrients.cals);
+    }).filter(f=>f.nutrients.cals)
+      .sort((a,b)=>foodRelevanceScore(b.name,query)-foodRelevanceScore(a.name,query))
+      .slice(0,6);
   }catch(e){return[];}
 }
 
@@ -1923,8 +2055,47 @@ async function fetchOpenFoodFacts(query){
       const servingG=parseFloat(p.serving_quantity)||null;
       const serving=p.serving_size||null;
       return{source:'off',name:p.product_name,brand:p.brands||'',nutrients,servingSize:serving,servingGrams:servingG,category:''};
-    });
+    }).sort((a,b)=>foodRelevanceScore(b.name,query)-foodRelevanceScore(a.name,query))
+      .slice(0,6);
   }catch(e){return[];}
+}
+
+// Common serving sizes for foods naturally measured in units (not 100g)
+// Each entry: [match pattern in food name, grams per unit, unit label]
+const COMMON_SERVINGS=[
+  [/^egg\b/i, 50, '1 large egg'],
+  [/^banana\b/i, 118, '1 medium banana'],
+  [/^apple\b/i, 182, '1 medium apple'],
+  [/^orange\b/i, 131, '1 medium orange'],
+  [/bread.*white|^bread\b/i, 28, '1 slice'],
+  [/bread.*whole wheat/i, 28, '1 slice'],
+  [/^avocado/i, 150, '1 medium avocado'],
+  [/^potato.*baked|^potato.*raw/i, 173, '1 medium potato'],
+  [/^sweet potato/i, 130, '1 medium sweet potato'],
+  [/^tomato/i, 123, '1 medium tomato'],
+  [/^strawberr/i, 12, '1 strawberry'],
+  [/^almond/i, 1, '1 almond'],
+  [/^peanut butter/i, 16, '1 tbsp'],
+  [/^butter\b/i, 14, '1 tbsp'],
+  [/^cheese.*cheddar|^cheese.*american/i, 28, '1 slice'],
+  [/^bacon/i, 8, '1 slice cooked'],
+  [/^bagel/i, 95, '1 bagel'],
+  [/^english muffin/i, 57, '1 muffin'],
+  [/^tortilla.*flour|^tortilla.*corn/i, 30, '1 tortilla'],
+  [/^rice.*cooked/i, 158, '1 cup'],
+  [/^pasta.*cooked|^spaghetti.*cooked/i, 140, '1 cup'],
+  [/^oats|oatmeal/i, 234, '1 cup cooked'],
+  [/^milk\b/i, 244, '1 cup'],
+  [/^yogurt/i, 245, '1 cup'],
+  [/^almond milk/i, 240, '1 cup'],
+  [/^chicken breast/i, 172, '1 breast'],
+];
+
+function getCommonServing(foodName){
+  for(const [pattern,grams,label] of COMMON_SERVINGS){
+    if(pattern.test(foodName))return{grams,label};
+  }
+  return null;
 }
 
 function selectFood(i){
@@ -1940,7 +2111,8 @@ function selectFood(i){
   if(food.servingGrams){
     gramsInput.value=food.servingGrams;
   } else {
-    gramsInput.value='';
+    const common=food.source==='usda'?getCommonServing(food.name):null;
+    gramsInput.value=common?common.grams:'';
   }
 
   // Show per-100g info + serving size button if available
@@ -1948,7 +2120,13 @@ function selectFood(i){
   if(food.servingSize&&food.servingGrams){
     per100.innerHTML=`${Math.round(food.nutrients.cals)} kcal per 100g &nbsp;·&nbsp; <span style="color:var(--accent);">1 serving = ${food.servingGrams}g${food.servingSize?' ('+food.servingSize+')':''}</span> — <button onclick="document.getElementById('foodGramsInput').value='${food.servingGrams}';calcFoodCals();" style="background:none;border:none;color:var(--accent);font-size:0.75rem;cursor:pointer;text-decoration:underline;padding:0;">use serving</button>`;
   } else {
-    per100.textContent=`${Math.round(food.nutrients.cals)} kcal per 100g`;
+    const common=food.source==='usda'?getCommonServing(food.name):null;
+    if(common){
+      gramsInput.value=common.grams;
+      per100.innerHTML=`${Math.round(food.nutrients.cals)} kcal per 100g &nbsp;·&nbsp; <span style="color:var(--accent);">${common.label} ≈ ${common.grams}g</span> — <button onclick="document.getElementById('foodGramsInput').value='${common.grams}';calcFoodCals();" style="background:none;border:none;color:var(--accent);font-size:0.75rem;cursor:pointer;text-decoration:underline;padding:0;">use ${common.label}</button>`;
+    } else {
+      per100.textContent=`${Math.round(food.nutrients.cals)} kcal per 100g`;
+    }
   }
 
   document.getElementById('foodSelectedRow').style.display='block';
@@ -2011,17 +2189,38 @@ async function openBarcodeScanner(){
   const video=document.getElementById('barcodeVideo');
   const status=document.getElementById('barcodeStatus');
   wrap.style.display='block';
+  status.textContent='Requesting camera access…';
+
+  // First explicitly request camera permission to trigger the prompt
+  try{
+    const permResult=await navigator.permissions.query({name:'camera'});
+    if(permResult.state==='denied'){
+      status.textContent='Camera access is blocked. Go to Settings → Safari → Camera → set to Allow, then try again.';
+      return;
+    }
+  }catch(e){
+    // permissions API not available — proceed anyway
+  }
+
   // Check BarcodeDetector support
   if(!('BarcodeDetector' in window)){
-    status.textContent='Barcode scanning not supported on this browser. Use Chrome on Android or Safari 17+ on iPhone.';
+    status.textContent='BarcodeDetector not available. Make sure you are using Safari on iOS 17+ and try reloading the page.';
     return;
   }
+
   try{
-    barcodeStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+    // Request camera — this triggers the permission prompt on iOS
+    barcodeStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},
+      audio:false
+    });
     video.srcObject=barcodeStream;
+    video.setAttribute('playsinline','true');
+    video.setAttribute('autoplay','true');
+    video.muted=true;
     await video.play();
     status.textContent='Point camera at barcode';
-    const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39']});
+    const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']});
     barcodeInterval=setInterval(async()=>{
       if(video.readyState!==video.HAVE_ENOUGH_DATA)return;
       try{
@@ -2029,14 +2228,20 @@ async function openBarcodeScanner(){
         if(barcodes.length>0){
           const code=barcodes[0].rawValue;
           clearInterval(barcodeInterval);
-          status.textContent=`Found barcode: ${code} — looking up…`;
+          status.textContent='Found: '+code+' — looking up…';
           closeBarcodeScanner();
           await lookupBarcode(code);
         }
       }catch(e){}
     },300);
   }catch(e){
-    status.textContent='Camera access denied. Please allow camera access and try again.';
+    if(e.name==='NotAllowedError'){
+      status.textContent='Camera access denied. Go to Settings → Safari → Camera → set to Allow, then try again.';
+    } else if(e.name==='NotFoundError'){
+      status.textContent='No camera found on this device.';
+    } else {
+      status.textContent='Camera error: '+e.message+'. Try reloading the page.';
+    }
   }
 }
 
@@ -2127,13 +2332,58 @@ function addMeal(){
   document.getElementById('mealNameInput').value='';document.getElementById('mealCalInput').value='';renderCals();
 }
 
+// ── MORNING ENERGY ──
+const ENERGY_LABELS=['Exhausted','Tired','Okay','Good','Great'];
+const ENERGY_COLORS=['#F87171','#FB923C','#FBBF24','#86EFAC','#4ADE80'];
+
+function renderEnergyScale(){
+  const el=document.getElementById('energyScaleRow');if(!el)return;
+  const today=todayKey();
+  const todayEntry=energyLog.find(e=>e.date===today);
+  el.innerHTML=ENERGY_LABELS.map((label,i)=>{
+    const val=i+1;
+    const isSelected=todayEntry&&todayEntry.value===val;
+    const color=ENERGY_COLORS[i];
+    return '<button onclick="logEnergy('+val+')" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:'+(isSelected?color+'22':'var(--surface2)')+';border:1.5px solid '+(isSelected?color:'var(--border)')+';border-radius:10px;padding:8px 4px;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:all 0.15s;">'
+      +'<span style="font-family:\'Syne\',sans-serif;font-size:1.1rem;font-weight:700;color:'+(isSelected?color:'var(--text-muted)')+';">'+val+'</span>'
+      +'<span style="font-size:0.62rem;color:var(--text-muted);text-align:center;line-height:1.2;">'+label+'</span>'
+      +'</button>';
+  }).join('');
+}
+
+function logEnergy(val){
+  const today=todayKey();
+  const existingIdx=energyLog.findIndex(e=>e.date===today);
+  if(existingIdx>=0){energyLog[existingIdx].value=val;}
+  else{energyLog.push({date:today,value:val});}
+  sv('energy7',energyLog);
+  renderEnergyScale();
+  renderEnergyHistory();
+}
+
+function renderEnergyHistory(){
+  const el=document.getElementById('energyHistoryList');if(!el)return;
+  if(!energyLog.length){el.innerHTML='<div class="empty-state">No energy logged yet!</div>';return;}
+  const recent=energyLog.slice().reverse().slice(0,7);
+  el.innerHTML=recent.map(e=>{
+    const ds=new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const color=ENERGY_COLORS[e.value-1];
+    const label=ENERGY_LABELS[e.value-1];
+    return '<div class="cardio-hist-item">'
+      +'<div class="cardio-hist-icon" style="background:'+color+'22;"><span style="font-family:\'Syne\',sans-serif;font-weight:700;color:'+color+';font-size:0.9rem;">'+e.value+'</span></div>'
+      +'<div class="cardio-hist-info">'
+      +'<div class="cardio-hist-name">'+label+'</div>'
+      +'<div class="cardio-hist-meta">'+ds+'</div>'
+      +'</div></div>';
+  }).join('');
+}
+
 // ── SLEEP ──
 function logSleep(){
   const hours=parseFloat(document.getElementById('sleepHours').value);
-  const qualityLabel=document.getElementById('sleepQuality').options[document.getElementById('sleepQuality').selectedIndex].text;
   const notes=document.getElementById('sleepNotes').value.trim();
   if(!hours||hours<=0){alert('Please enter hours slept.');return;}
-  sleepHistory.push({date:todayKey(),hours,qualityLabel,notes});
+  sleepHistory.push({date:todayKey(),hours,notes});
   sv('sl7',sleepHistory);
   document.getElementById('sleepHours').value='';document.getElementById('sleepNotes').value='';
   renderSleepHistory();
@@ -2150,7 +2400,7 @@ function renderSleepHistory(){
     return `<div class="cardio-hist-item">
       <div class="cardio-hist-icon" style="background:#1A1826;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7C6EFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></div>
       <div class="cardio-hist-info">
-        <div class="cardio-hist-name">${s.hours} hrs · ${s.qualityLabel}</div>
+        <div class="cardio-hist-name">${s.hours} hrs</div>
         <div class="cardio-hist-meta">${ds}${s.notes?' · '+s.notes:''}</div>
         <div style="margin-top:6px;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;"><div style="width:${barPct}%;height:100%;background:${barColor};border-radius:2px;"></div></div>
       </div>
@@ -3504,9 +3754,7 @@ function toggleMorning(key){
       card.classList.add(flashClass);
       setTimeout(()=>card.classList.remove(flashClass),600);
     }
-    // Show All done badge
-    const badge=document.getElementById('morningAllDoneBadge');
-    if(badge)badge.style.display=mDone===3?'inline-flex':'none';
+    // Show All done badge removed per user request
   });
 }
 function renderMorning(){
@@ -3643,12 +3891,11 @@ function toggleSleepExpand(){
 
 function logSleepFromToday(){
   const hours=parseFloat(document.getElementById('sleepHours').value);
-  const qualityLabel=document.getElementById('sleepQuality').options[document.getElementById('sleepQuality').selectedIndex].text;
   const notes=document.getElementById('sleepNotes').value.trim();
   if(!hours||hours<=0){alert('Please enter hours slept.');return;}
   // Remove existing entry for today and replace
   const filtered=sleepHistory.filter(e=>e.date!==todayKey());
-  filtered.push({date:todayKey(),hours,qualityLabel,notes});
+  filtered.push({date:todayKey(),hours,notes});
   sleepHistory=filtered;
   sv('sl7',sleepHistory);
   document.getElementById('sleepHours').value='';
@@ -4163,12 +4410,11 @@ function toggleMorningExpand(){
   if(isOpen){renderMorning();renderWeight();}
 }
 function switchWellness(p){
-  ['Calories','Sleep','Sauna'].forEach(n=>{
+  ['Calories','Recovery'].forEach(n=>{
     document.getElementById('pane'+n).classList.toggle('active',n===p);
     document.getElementById('subnav'+n).classList.toggle('active',n===p);
   });
-  if(p==='Sleep')renderSleepHistory();
-  if(p==='Sauna'){renderSaunaHistory();prefillSauna();}
+  if(p==='Recovery'){renderSleepHistory();renderSaunaHistory();prefillSauna();renderEnergyScale();renderEnergyHistory();}
   if(p==='Calories')renderCals();
 }
 function switchFitness(p){
@@ -4197,7 +4443,7 @@ function updateDate(){
 }
 
 // ── INIT ──
-updateDate();render();updateProgress();renderMorning();renderWeight();renderCals();renderCardioHistory();renderSleepHistory();renderSaunaHistory();prefillSauna();renderWorkoutList();renderStats();renderLiftProgress();renderSupplementsSection();
+updateDate();render();updateProgress();renderMorning();renderWeight();renderCals();renderCardioHistory();renderSleepHistory();renderSaunaHistory();prefillSauna();renderWorkoutList();renderStats();renderLiftProgress();renderSupplementsSection();renderEnergyScale();renderEnergyHistory();
 </script>
 </body>
 </html>
