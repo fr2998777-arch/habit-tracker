@@ -2203,43 +2203,28 @@ async function openBarcodeScanner(){
     await video.play();
     status.textContent='Loading barcode scanner…';
 
-    // Dynamically load ZXing (works on iOS Safari unlike BarcodeDetector)
-    if(!window.ZXing){
+    // Load ZXing from CDN
+    if(!window.ZXingBrowser){
       await new Promise((res,rej)=>{
         const s=document.createElement('script');
-        s.src='https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.18.6/index.min.js';
+        s.src='https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js';
         s.onload=res;s.onerror=rej;
         document.head.appendChild(s);
       });
     }
 
     status.textContent='Point camera at barcode';
-    const ctx=canvas.getContext('2d');
-    const hints=new Map();
-    const formats=[
-      ZXing.BarcodeFormat.EAN_13,
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,
-      ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.QR_CODE,
-    ];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,formats);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
-    const reader=new ZXing.MultiFormatReader();
-    reader.setHints(hints);
 
-    barcodeInterval=setInterval(()=>{
+    const codeReader=new ZXingBrowser.BrowserMultiFormatReader();
+    barcodeInterval=setInterval(async()=>{
       if(video.readyState<video.HAVE_ENOUGH_DATA)return;
-      canvas.width=video.videoWidth;
-      canvas.height=video.videoHeight;
-      ctx.drawImage(video,0,0,canvas.width,canvas.height);
       try{
+        canvas.width=video.videoWidth;
+        canvas.height=video.videoHeight;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(video,0,0);
         const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-        const luminance=new ZXing.RGBLuminanceSource(imgData.data,canvas.width,canvas.height);
-        const bitmap=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminance));
-        const result=reader.decode(bitmap);
+        const result=await codeReader.decodeFromImageData(imgData);
         if(result){
           const code=result.getText();
           clearInterval(barcodeInterval);
@@ -2248,9 +2233,9 @@ async function openBarcodeScanner(){
           lookupBarcode(code);
         }
       }catch(e){
-        // NotFoundException is normal when no barcode in frame — ignore
+        // NotFoundException is normal — no barcode in frame yet
       }
-    },200);
+    },300);
 
   }catch(e){
     if(e.name==='NotAllowedError'){
@@ -2258,14 +2243,19 @@ async function openBarcodeScanner(){
     } else if(e.name==='NotFoundError'){
       status.textContent='No camera found on this device.';
     } else {
-      status.textContent='Camera error ('+e.name+'): '+e.message;
+      status.textContent='Camera error: '+(e.message||e.name||'unknown error');
     }
   }
 }
 
 function closeBarcodeScanner(){
   if(barcodeInterval){clearInterval(barcodeInterval);barcodeInterval=null;}
-  if(barcodeStream){barcodeStream.getTracks().forEach(t=>t.stop());barcodeStream=null;}
+  if(barcodeStream){
+    barcodeStream.getTracks().forEach(t=>{t.stop();});
+    barcodeStream=null;
+  }
+  const video=document.getElementById('barcodeVideo');
+  if(video){video.srcObject=null;video.load();}
   const wrap=document.getElementById('barcodeScannerWrap');
   if(wrap)wrap.style.display='none';
 }
