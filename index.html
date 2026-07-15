@@ -258,7 +258,7 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
 .btn-danger{flex:2;padding:0.85rem;background:var(--red);border:none;border-radius:12px;color:white;font-family:'Syne',sans-serif;font-size:0.95rem;font-weight:600;cursor:pointer;}
 
 /* NAV */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(14,14,18,0.96);backdrop-filter:blur(16px);border-top:1px solid var(--border);display:flex;padding:0.75rem 0.5rem 0.9rem;gap:0.25rem;z-index:20;}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(14,14,18,0.96);backdrop-filter:blur(16px);border-top:1px solid var(--border);display:flex;padding:0.75rem 0.5rem max(env(safe-area-inset-bottom), 0.9rem);gap:0.25rem;z-index:20;}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;color:var(--text-muted);font-family:'DM Sans',sans-serif;font-size:0.6rem;cursor:pointer;padding:0.4rem 0.2rem;border-radius:12px;transition:color 0.2s,background 0.2s;-webkit-tap-highlight-color:transparent;}
 .nav-btn.active{color:var(--accent);background:rgba(124,110,250,0.1);}
 .nav-circle{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:transform 0.15s;}
@@ -2189,58 +2189,54 @@ async function openBarcodeScanner(){
   const video=document.getElementById('barcodeVideo');
   const status=document.getElementById('barcodeStatus');
   wrap.style.display='block';
-  status.textContent='Requesting camera access…';
+  status.textContent='Starting camera…';
 
-  // First explicitly request camera permission to trigger the prompt
+  // On iOS, skip permissions check entirely — just go straight to getUserMedia
+  // which is what actually triggers the camera permission prompt
   try{
-    const permResult=await navigator.permissions.query({name:'camera'});
-    if(permResult.state==='denied'){
-      status.textContent='Camera access is blocked. Go to Settings → Safari → Camera → set to Allow, then try again.';
-      return;
-    }
-  }catch(e){
-    // permissions API not available — proceed anyway
-  }
-
-  // Check BarcodeDetector support
-  if(!('BarcodeDetector' in window)){
-    status.textContent='BarcodeDetector not available. Make sure you are using Safari on iOS 17+ and try reloading the page.';
-    return;
-  }
-
-  try{
-    // Request camera — this triggers the permission prompt on iOS
     barcodeStream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},
+      video:{facingMode:{ideal:'environment'}},
       audio:false
     });
+
     video.srcObject=barcodeStream;
-    video.setAttribute('playsinline','true');
-    video.setAttribute('autoplay','true');
     video.muted=true;
+    video.playsInline=true;
     await video.play();
+
+    // Check BarcodeDetector AFTER camera is running
+    if(!('BarcodeDetector' in window)){
+      status.textContent='Camera is working but barcode detection is not supported. Try opening the app in Safari (not as a home screen app).';
+      return;
+    }
+
     status.textContent='Point camera at barcode';
     const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']});
+
     barcodeInterval=setInterval(async()=>{
-      if(video.readyState!==video.HAVE_ENOUGH_DATA)return;
+      if(video.readyState<video.HAVE_ENOUGH_DATA)return;
       try{
         const barcodes=await detector.detect(video);
         if(barcodes.length>0){
           const code=barcodes[0].rawValue;
           clearInterval(barcodeInterval);
-          status.textContent='Found: '+code+' — looking up…';
+          barcodeInterval=null;
           closeBarcodeScanner();
+          status.textContent='';
           await lookupBarcode(code);
         }
       }catch(e){}
     },300);
+
   }catch(e){
     if(e.name==='NotAllowedError'){
-      status.textContent='Camera access denied. Go to Settings → Safari → Camera → set to Allow, then try again.';
+      status.textContent='Camera access was denied. Go to Settings → Safari → Camera → Allow, then try again.';
     } else if(e.name==='NotFoundError'){
       status.textContent='No camera found on this device.';
+    } else if(e.name==='NotSupportedError'){
+      status.textContent='Camera not supported. Make sure you are using HTTPS (the GitHub Pages URL, not a local file).';
     } else {
-      status.textContent='Camera error: '+e.message+'. Try reloading the page.';
+      status.textContent='Camera error ('+e.name+'): '+e.message;
     }
   }
 }
