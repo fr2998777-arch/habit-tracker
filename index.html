@@ -258,7 +258,7 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
 .btn-danger{flex:2;padding:0.85rem;background:var(--red);border:none;border-radius:12px;color:white;font-family:'Syne',sans-serif;font-size:0.95rem;font-weight:600;cursor:pointer;}
 
 /* NAV */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(14,14,18,0.96);backdrop-filter:blur(16px);border-top:1px solid var(--border);display:flex;padding:0.75rem 0.5rem 0.9rem;padding-bottom:max(0.9rem,env(safe-area-inset-bottom));gap:0.25rem;z-index:20;}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(14,14,18,0.96);backdrop-filter:blur(16px);border-top:1px solid var(--border);display:flex;padding:0.75rem 0.5rem calc(max(env(safe-area-inset-bottom), 1.2rem));gap:0.25rem;z-index:20;}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;color:var(--text-muted);font-family:'DM Sans',sans-serif;font-size:0.6rem;cursor:pointer;padding:0.4rem 0.2rem;border-radius:12px;transition:color 0.2s,background 0.2s;-webkit-tap-highlight-color:transparent;}
 .nav-btn.active{color:var(--accent);background:rgba(124,110,250,0.1);}
 .nav-circle{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:transform 0.15s;}
@@ -1953,11 +1953,24 @@ async function fetchFoodResults(query){
   statusEl.innerHTML='<span class="search-spinner"></span>Searching USDA + Branded…';
   resultsEl.classList.remove('open');
 
-  // Run both APIs in parallel
-  const [usdaItems,brandedItems]=await Promise.all([
-    fetchUSDA(query),
-    fetchOpenFoodFacts(query)
-  ]);
+  const cacheKey=query.trim().toLowerCase();
+  let usdaItems,brandedItems,err;
+  const hit=foodCache.get(cacheKey);
+  if(hit){
+    usdaItems=hit.usda;brandedItems=hit.branded;err=hit.err;
+  } else {
+    // Run both APIs in parallel
+    [usdaItems,brandedItems]=await Promise.all([
+      fetchUSDA(query),
+      fetchOpenFoodFacts(query)
+    ]);
+    err=usdaError;
+    // Don't cache a rate-limit failure — it should recover on its own
+    if(!err){
+      foodCache.set(cacheKey,{usda:usdaItems,branded:brandedItems,err:null});
+      if(foodCache.size>40)foodCache.delete(foodCache.keys().next().value);
+    }
+  }
 
   // A newer keystroke already started its own search — drop this stale one
   if(seq!==foodSearchSeq)return;
@@ -1966,11 +1979,13 @@ async function fetchFoodResults(query){
   statusEl.textContent='';
 
   if(!allItems.length){
-    statusEl.textContent='No results found. Try a different name or add manually.';
+    statusEl.textContent=err||'No results found. Try a different name or add manually.';
     return;
   }
 
-  statusEl.textContent=allItems.length+' result'+(allItems.length!==1?'s':'')+' — USDA + Branded';
+  statusEl.textContent=err
+    ? err
+    : allItems.length+' result'+(allItems.length!==1?'s':'')+' — USDA + Branded';
 
   // Render with source badges and divider between USDA and Branded
   let html='';
@@ -2005,7 +2020,9 @@ async function fetchFoodResults(query){
 // Goal: plain whole foods ("Bananas, raw") rank above their processed spin-offs
 // ("Banana bread", "Banana chips", "Babyfood, banana").
 // Filler words — never counted for or against a result
-const FOOD_STOPWORDS=['a','an','and','or','of','with','without','in','on','the','from','plus','all','type','ns','nfs','includes','including','not','further','specified','prepared','commercial','commercially','usda','commodity'];
+// 'without' is deliberately NOT here — "without skin" marks a modified form and
+// should rank under the plain "with skin" entry
+const FOOD_STOPWORDS=['a','an','and','or','of','with','in','on','the','from','plus','all','type','ns','nfs','includes','including','not','further','specified','prepared','commercial','commercially','usda','commodity','food','distribution','program','foods'];
 // Plain-preparation words — descriptive but not a sign of a processed product
 const FOOD_NEUTRAL_WORDS=['raw','fresh','plain','unprepared','uncooked','cooked','boiled','steamed','roasted','baked','broiled','grilled','drained','skin','skinless','bone','boneless','meat','only','whole','light','dark','regular','unsalted','salted','solid','edible','portion','flesh','yellow','red','green','white','ripe'];
 // Words that mark a processed or compound product rather than the whole food
@@ -2014,6 +2031,10 @@ const FOOD_PROCESSED_WORDS=['bread','cake','pie','muffin','cookie','biscuit','br
 function foodNorm(s){
   return String(s||'').toLowerCase()
     .replace(/[‘’]/g,"'")
+    // USDA tags many of its staple entries with "(Includes foods for USDA's
+    // Food Distribution Program)". That boilerplate marks a basic food, so
+    // counting its words as specificity penalised exactly the wrong entries.
+    .replace(/\([^)]*\)/g,' ')
     .replace(/[^a-z0-9,]+/g,' ')
     .replace(/\s+/g,' ')
     .trim();
@@ -2059,8 +2080,12 @@ function foodRelevanceScore(name,query,source){
   else if(qTok.every(t=>headTok.indexOf(t)>=0))score+=20;
 
   // 3. Each extra descriptive word makes the item more specific than asked for
-  const noise=nTok.filter(t=>qTok.indexOf(t)<0&&FOOD_STOPWORDS.indexOf(t)<0&&FOOD_NEUTRAL_WORDS.indexOf(t)<0);
+  const extras=nTok.filter(t=>qTok.indexOf(t)<0&&FOOD_STOPWORDS.indexOf(t)<0);
+  const noise=extras.filter(t=>FOOD_NEUTRAL_WORDS.indexOf(t)<0);
   score-=noise.length*6;
+  // Plain-prep words cost a little too, so the shortest description of a food
+  // wins: "Apples, raw, without skin" over "...without skin, cooked, boiled"
+  score-=(extras.length-noise.length)*3;
 
   // 4. Processed-product words are a hard penalty — unless the user asked for
   //    one, so "banana bread" still finds banana bread
@@ -2093,17 +2118,32 @@ function rankFoods(items,query,limit){
   return (keep.length>=3?keep:scored.slice(0,3)).slice(0,limit||6).map(x=>x.f);
 }
 
+// Set by fetchUSDA so the status line can explain an empty/branded-only list
+let usdaError=null;
+// Repeat searches are common (typing, deleting, retyping) — cache so they are free
+const foodCache=new Map();
+
 async function fetchUSDA(query){
   const url=allWords=>`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}`
-    +`&dataType=Foundation,SR%20Legacy&pageSize=50${allWords?'&requireAllWords=true':''}&api_key=${USDA_KEY}`;
+    +`&dataType=Foundation,SR%20Legacy&pageSize=200${allWords?'&requireAllWords=true':''}&api_key=${USDA_KEY}`;
   const run=async allWords=>{
     const res=await fetch(url(allWords));
+    if(!res.ok){
+      // DEMO_KEY allows only 30 requests/hour. Silently returning [] here made
+      // the app show branded-only results with no hint why.
+      const e=new Error(res.status===429||res.status===403
+        ?'USDA hourly limit reached — showing branded results only. Add a free API key to fix.'
+        :'USDA search unavailable ('+res.status+') — showing branded results only.');
+      e.userFacing=true;throw e;
+    }
     const data=await res.json();
     return data.foods||[];
   };
   try{
-    // Ask for a wide pool (50, not 10) so our own ranking has something to work
-    // with — USDA's own ordering is what buries "Bananas, raw" behind the rest.
+    usdaError=null;
+    // Ask for the whole result set, not the first 50: USDA ranks its own plain
+    // entries surprisingly low ("Apples, raw, with skin" is its 74th hit), so a
+    // small pool silently excludes the exact item we are trying to surface.
     let foods=await run(true);
     // requireAllWords finds nothing for partial words mid-typing, so retry loose
     if(!foods.length)foods=await run(false);
@@ -2117,7 +2157,10 @@ async function fetchUSDA(query){
       return{source:'usda',name:f.description,category:f.foodCategory||'',nutrients:nutrByName,servingSize:null,brand:null};
     }).filter(f=>f.nutrients.cals);
     return rankFoods(items,query,6);
-  }catch(e){return[];}
+  }catch(e){
+    usdaError=e.userFacing?e.message:'USDA search failed — showing branded results only.';
+    return[];
+  }
 }
 
 async function fetchOpenFoodFacts(query){
@@ -2291,16 +2334,22 @@ document.addEventListener('click',e=>{if(!e.target.closest('#foodResults')&&!e.t
 // 12MP photo succeeds where 30 blurry frames a second did not.
 let _zxingLoader=null;
 
+const ZXING_CDNS=[
+  'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js',
+  'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js',
+];
 function loadZXing(){
   if(window.ZXing)return Promise.resolve();
   if(_zxingLoader)return _zxingLoader;
-  _zxingLoader=new Promise((res,rej)=>{
+  const tryCdn=i=>new Promise((res,rej)=>{
+    if(i>=ZXING_CDNS.length){rej(new Error('Could not load the barcode decoder — check your connection, then try again.'));return;}
     const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
-    s.onload=()=>res();
-    s.onerror=()=>{_zxingLoader=null;rej(new Error('Could not load the barcode decoder — check your connection.'));};
+    s.src=ZXING_CDNS[i];
+    s.onload=()=>window.ZXing?res():tryCdn(i+1).then(res,rej);
+    s.onerror=()=>{s.remove();tryCdn(i+1).then(res,rej);}; // fall back to the next CDN
     document.head.appendChild(s);
   });
+  _zxingLoader=tryCdn(0).catch(e=>{_zxingLoader=null;throw e;});
   return _zxingLoader;
 }
 
@@ -2374,7 +2423,8 @@ async function onBarcodeImagePicked(input){
     if(prev){prev.src=objUrl;prev.dataset.objurl=objUrl;prev.style.display='block';}
     const code=await decodeBarcodeFromImage(img);
     if(!code){
-      setBarcodeStatus('No barcode found in that photo. Get closer so it fills the frame, keep it straight, or type the numbers below.');
+      setBarcodeStatus('No barcode found. Fill the frame with just the barcode, hold the phone square to it, and avoid glare — or type the numbers below.');
+      showBarcodeDiag();
       return;
     }
     setBarcodeStatus('Found '+code+' — looking it up…',true);
@@ -2382,8 +2432,17 @@ async function onBarcodeImagePicked(input){
     lookupBarcode(code);
   }catch(e){
     URL.revokeObjectURL(objUrl);
-    setBarcodeStatus('Could not read the photo: '+(e.message||'unknown error'));
+    setBarcodeStatus(e.message||'Could not read that photo.');
+    showBarcodeDiag();
   }
+}
+
+// Small grey trace under a failure, so a scan that fails on a real phone can be
+// reported back precisely instead of just "it didn't work"
+function showBarcodeDiag(){
+  const el=document.getElementById('barcodeStatus');
+  if(!el||!barcodeDiag)return;
+  el.innerHTML+='<div style="font-size:0.68rem;color:var(--text-dim);margin-top:3px;">'+escHtml(barcodeDiag)+'</div>';
 }
 
 // OpenFoodFacts stores UPC-A as a 13-digit EAN, so pad the leading zero
@@ -2414,18 +2473,27 @@ function isPlausibleBarcode(code){
   return gtinChecksumOk(code);
 }
 
+// One reusable canvas: a dozen 3-megapixel canvases would be ~150MB and can
+// take mobile Safari down. Passes run sequentially so reuse is safe.
+let _bcCanvas=null;
+
 // Redraw the photo cropped / rotated / scaled / contrast-boosted for one attempt
 function barcodeCanvasFrom(img,o){
   o=o||{};
   const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;
   const sx=Math.round((o.cropX||0)*iw),sy=Math.round((o.cropY||0)*ih);
   const sw=Math.max(1,Math.round((o.cropW||1)*iw)),sh=Math.max(1,Math.round((o.cropH||1)*ih));
-  const scale=Math.min(1,(o.maxDim||1600)/Math.max(sw,sh));
+  let scale=Math.min(1,(o.maxDim||1800)/Math.max(sw,sh));
+  // iOS Safari refuses to allocate canvases beyond ~16.7M pixels
+  const maxPx=12000000;
+  if(sw*scale*sh*scale>maxPx)scale=Math.sqrt(maxPx/(sw*sh));
   const dw=Math.max(1,Math.round(sw*scale)),dh=Math.max(1,Math.round(sh*scale));
-  const c=document.createElement('canvas');
+  const c=_bcCanvas||(_bcCanvas=document.createElement('canvas'));
   c.width=o.rotate?dh:dw;
   c.height=o.rotate?dw:dh;
   const ctx=c.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,c.width,c.height);
   ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
   if(o.rotate){
     ctx.translate(c.width/2,c.height/2);
@@ -2488,7 +2556,15 @@ async function zxingDecodeCanvas(canvas){
   }catch(e){return null;}
 }
 
+// Human-readable trace of the last decode, shown under a failure message so a
+// scan that fails on a real phone can actually be diagnosed
+let barcodeDiag='';
+
 async function decodeBarcodeFromImage(img){
+  const w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+  const diag=[w+'×'+h+'px'];
+  barcodeDiag='';
+
   // Chrome/Android have a native detector — much faster when it exists
   if(window.BarcodeDetector){
     try{
@@ -2498,25 +2574,40 @@ async function decodeBarcodeFromImage(img){
         const code=normalizeBarcode(found[i].rawValue);
         if(isPlausibleBarcode(code))return code;
       }
-    }catch(e){/* unsupported format list or detector unavailable — fall through */}
+      diag.push('native detector: none');
+    }catch(e){diag.push('native detector: n/a');}
+  } else diag.push('no native detector');
+
+  try{
+    await loadZXing();
+  }catch(e){
+    barcodeDiag=diag.concat('ZXing failed to load').join(' · ');
+    throw e;
   }
-  await loadZXing();
-  // Several passes over the same still: whole frame, centre crops (people aim
-  // the barcode at the middle), rotated for a vertical barcode, then boosted.
-  const attempts=[
-    {maxDim:1600},
-    {maxDim:1600,cropY:0.2,cropH:0.6},
-    {maxDim:1600,cropX:0.1,cropW:0.8,cropY:0.3,cropH:0.4},
-    {maxDim:1600,rotate:true},
-    {maxDim:1600,rotate:true,cropX:0.2,cropW:0.6},
-    {maxDim:1600,boost:true},
-    {maxDim:1600,boost:true,cropY:0.2,cropH:0.6},
-    {maxDim:900},
+
+  // A barcode usually fills only part of the frame. Downscaling a 12MP photo to
+  // one 1600px pass shrank the bars below the ~2px/module ZXing needs, which is
+  // why every real photo failed. So zoom in progressively at close to native
+  // resolution instead, and try each region upright, rotated and contrast-boosted.
+  const regions=[
+    {},                                                   // whole frame
+    {cropX:0.10,cropY:0.10,cropW:0.80,cropH:0.80},        // 1.25x
+    {cropX:0.05,cropY:0.32,cropW:0.90,cropH:0.36},        // wide centre band
+    {cropX:0.25,cropY:0.25,cropW:0.50,cropH:0.50},        // 2x centre
+    {cropX:0.32,cropY:0.38,cropW:0.36,cropH:0.28},        // ~3x centre
   ];
-  for(let i=0;i<attempts.length;i++){
-    const code=await zxingDecodeCanvas(barcodeCanvasFrom(img,attempts[i]));
-    if(code)return code;
+  let passes=0;
+  for(let r=0;r<regions.length;r++){
+    for(let v=0;v<3;v++){
+      const o=Object.assign({maxDim:2000},regions[r]);
+      if(v===1)o.rotate=true;
+      if(v===2)o.boost=true;
+      passes++;
+      const code=await zxingDecodeCanvas(barcodeCanvasFrom(img,o));
+      if(code){barcodeDiag=diag.concat(passes+' passes').join(' · ');return code;}
+    }
   }
+  barcodeDiag=diag.concat(passes+' passes, no match').join(' · ');
   return null;
 }
 
