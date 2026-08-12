@@ -258,7 +258,7 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
 .btn-danger{flex:2;padding:0.85rem;background:var(--red);border:none;border-radius:12px;color:white;font-family:'Syne',sans-serif;font-size:0.95rem;font-weight:600;cursor:pointer;}
 
 /* NAV */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(14,14,18,0.96);backdrop-filter:blur(16px);border-top:1px solid var(--border);display:flex;padding:0.75rem 0.5rem calc(max(env(safe-area-inset-bottom), 1.2rem));gap:0.25rem;z-index:20;}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(14,14,18,0.96);backdrop-filter:blur(16px);border-top:1px solid var(--border);display:flex;padding:0.75rem 0.5rem 0.9rem;padding-bottom:max(0.9rem,env(safe-area-inset-bottom));gap:0.25rem;z-index:20;}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;color:var(--text-muted);font-family:'DM Sans',sans-serif;font-size:0.6rem;cursor:pointer;padding:0.4rem 0.2rem;border-radius:12px;transition:color 0.2s,background 0.2s;-webkit-tap-highlight-color:transparent;}
 .nav-btn.active{color:var(--accent);background:rgba(124,110,250,0.1);}
 .nav-circle{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:transform 0.15s;}
@@ -477,20 +477,30 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10"/></svg>
           </button>
         </div>
-        <!-- Barcode scanner modal -->
-        <div id="barcodeScannerWrap" style="display:none;margin-top:0.6rem;">
-          <div style="background:#0a0a0a;border-radius:10px;overflow:hidden;position:relative;height:180px;">
-            <video id="barcodeVideo" style="width:100%;height:100%;object-fit:cover;" playsinline></video>
-            <canvas id="barcodeCanvas" style="display:none;position:absolute;"></canvas>
-            <!-- Corner guides -->
-            <div style="position:absolute;top:12px;left:12px;width:20px;height:20px;border-top:2.5px solid #C084FC;border-left:2.5px solid #C084FC;border-radius:2px 0 0 0;"></div>
-            <div style="position:absolute;top:12px;right:12px;width:20px;height:20px;border-top:2.5px solid #C084FC;border-right:2.5px solid #C084FC;border-radius:0 2px 0 0;"></div>
-            <div style="position:absolute;bottom:12px;left:12px;width:20px;height:20px;border-bottom:2.5px solid #C084FC;border-left:2.5px solid #C084FC;border-radius:0 0 0 2px;"></div>
-            <div style="position:absolute;bottom:12px;right:12px;width:20px;height:20px;border-bottom:2.5px solid #C084FC;border-right:2.5px solid #C084FC;border-radius:0 0 2px 0;"></div>
-            <div id="scanLine" style="position:absolute;left:10%;width:80%;height:2px;background:linear-gradient(90deg,transparent,#C084FC,transparent);top:40%;animation:scanAnim 1.5s ease-in-out infinite;"></div>
-            <div id="barcodeStatus" style="position:absolute;bottom:8px;left:0;right:0;text-align:center;font-size:11px;color:rgba(255,255,255,0.6);">Point camera at barcode</div>
+        <!-- Barcode scanner — still-photo based. iOS Safari has no BarcodeDetector
+             and live-video decoding is unreliable there, so we let iOS shoot one
+             full-resolution photo and decode that instead of a video stream. -->
+        <div id="barcodeScannerWrap" style="display:none;margin-top:0.6rem;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:0.85rem;">
+          <div style="font-family:'Syne',sans-serif;font-size:0.9rem;font-weight:600;margin-bottom:0.2rem;" id="barcodeTitle">Scan a barcode</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.7rem;">Hold steady and fill the frame with the barcode. Good light, straight on.</div>
+          <input type="file" id="barcodeCameraInput" accept="image/*" capture="environment" style="display:none;" onchange="onBarcodeImagePicked(this)"/>
+          <input type="file" id="barcodeLibraryInput" accept="image/*" style="display:none;" onchange="onBarcodeImagePicked(this)"/>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="add-meal-btn" style="flex:2;padding:0.75rem 0.5rem;background:#C084FC;" onclick="document.getElementById('barcodeCameraInput').click()">Take photo</button>
+            <button class="btn-cancel" style="flex:1;padding:0.75rem 0.5rem;border-radius:10px;font-size:0.85rem;white-space:nowrap;" onclick="document.getElementById('barcodeLibraryInput').click()">Library</button>
           </div>
-          <button class="btn-cancel" style="width:100%;margin-top:0.5rem;border-radius:10px;padding:0.65rem;" onclick="closeBarcodeScanner()">Cancel</button>
+          <div id="barcodeStatus" style="font-size:0.78rem;color:var(--text-muted);min-height:1.1rem;margin-top:0.6rem;line-height:1.5;"></div>
+          <img id="barcodePreview" alt="" style="display:none;width:100%;max-height:110px;object-fit:contain;border-radius:8px;margin-top:0.4rem;background:#0a0a0a;"/>
+          <div style="display:flex;align-items:center;gap:8px;margin:0.75rem 0 0.6rem;">
+            <div style="flex:1;height:1px;background:var(--border);"></div>
+            <span style="font-size:0.7rem;color:var(--text-dim);white-space:nowrap;">or type the numbers</span>
+            <div style="flex:1;height:1px;background:var(--border);"></div>
+          </div>
+          <div style="display:flex;gap:0.5rem;">
+            <input class="meal-input" id="barcodeManualInput" type="tel" inputmode="numeric" autocomplete="off" placeholder="e.g. 038000138416" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter')submitManualBarcode()"/>
+            <button class="add-meal-btn" onclick="submitManualBarcode()">Look up</button>
+          </div>
+          <button class="btn-cancel" style="width:100%;margin-top:0.65rem;border-radius:10px;padding:0.65rem;" onclick="closeBarcodeScanner()">Cancel</button>
         </div>
         <div class="food-selected-row" id="foodSelectedRow" style="display:none;">
           <div class="food-selected-name" id="foodSelectedName"></div>
@@ -1924,16 +1934,22 @@ const NUTR_MAP={
   1178:'vitB12',
 };
 
+const escHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let foodSearchSeq=0;
+
 async function onFoodSearch(query,immediate=false){
   clearTimeout(foodSearchTimer);
   const q=query.trim();
-  if(!q){closeFoodResults();return;}
+  if(!q){closeFoodResults();document.getElementById('foodSearchStatus').textContent='';return;}
+  // One-letter queries just burn the USDA rate limit and return noise
+  if(q.length<2&&!immediate){closeFoodResults();return;}
   foodSearchTimer=setTimeout(()=>fetchFoodResults(q),immediate?0:500);
 }
 
 async function fetchFoodResults(query){
   const statusEl=document.getElementById('foodSearchStatus');
   const resultsEl=document.getElementById('foodResults');
+  const seq=++foodSearchSeq;
   statusEl.innerHTML='<span class="search-spinner"></span>Searching USDA + Branded…';
   resultsEl.classList.remove('open');
 
@@ -1942,6 +1958,9 @@ async function fetchFoodResults(query){
     fetchUSDA(query),
     fetchOpenFoodFacts(query)
   ]);
+
+  // A newer keystroke already started its own search — drop this stale one
+  if(seq!==foodSearchSeq)return;
 
   const allItems=[...usdaItems,...brandedItems];
   statusEl.textContent='';
@@ -1959,7 +1978,7 @@ async function fetchFoodResults(query){
     html+=usdaItems.map((f,i)=>`
       <div class="food-result-item" onclick="selectFood(${i})">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
-          <div class="food-result-name" style="flex:1;">${f.name}</div>
+          <div class="food-result-name" style="flex:1;">${escHtml(f.name)}</div>
           <span style="font-size:10px;font-weight:500;padding:2px 6px;border-radius:20px;background:#1A2420;color:#4ADE80;border:0.5px solid #4ADE80;white-space:nowrap;flex-shrink:0;">USDA</span>
         </div>
         <div class="food-result-meta">${Math.round(f.nutrients.cals)} kcal · P:${Math.round(f.nutrients.protein||0)}g · C:${Math.round(f.nutrients.carbs||0)}g · F:${Math.round(f.nutrients.fat||0)}g per 100g${f.category?' · '+f.category:''}</div>
@@ -1970,10 +1989,10 @@ async function fetchFoodResults(query){
     html+=brandedItems.map((f,i)=>`
       <div class="food-result-item" onclick="selectFood(${usdaItems.length+i})">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
-          <div class="food-result-name" style="flex:1;">${f.name}</div>
+          <div class="food-result-name" style="flex:1;">${escHtml(f.name)}</div>
           <span style="font-size:10px;font-weight:500;padding:2px 6px;border-radius:20px;background:#191E24;color:#60A5FA;border:0.5px solid #60A5FA;white-space:nowrap;flex-shrink:0;">Branded</span>
         </div>
-        <div class="food-result-meta">${Math.round(f.nutrients.cals)} kcal · P:${Math.round(f.nutrients.protein||0)}g · C:${Math.round(f.nutrients.carbs||0)}g · F:${Math.round(f.nutrients.fat||0)}g${f.servingGrams?' · serving: '+f.servingGrams+'g':' · per 100g'}${f.brand?' · '+f.brand:''}</div>
+        <div class="food-result-meta">${Math.round(f.nutrients.cals)} kcal · P:${Math.round(f.nutrients.protein||0)}g · C:${Math.round(f.nutrients.carbs||0)}g · F:${Math.round(f.nutrients.fat||0)}g${f.servingGrams?' · serving: '+f.servingGrams+'g':' · per 100g'}${f.brand?' · '+escHtml(f.brand):''}</div>
       </div>`).join('');
   }
 
@@ -1982,51 +2001,131 @@ async function fetchFoodResults(query){
   resultsEl.classList.add('open');
 }
 
-// Relevance scoring — prioritizes simple/generic foods that closely match the search term
-function foodRelevanceScore(name,query){
-  const n=name.toLowerCase().trim();
-  const q=query.toLowerCase().trim();
-  const firstWord=n.split(/[,\s]/)[0];
+// ── RELEVANCE SCORING ──
+// Goal: plain whole foods ("Bananas, raw") rank above their processed spin-offs
+// ("Banana bread", "Banana chips", "Babyfood, banana").
+// Filler words — never counted for or against a result
+const FOOD_STOPWORDS=['a','an','and','or','of','with','without','in','on','the','from','plus','all','type','ns','nfs','includes','including','not','further','specified','prepared','commercial','commercially','usda','commodity'];
+// Plain-preparation words — descriptive but not a sign of a processed product
+const FOOD_NEUTRAL_WORDS=['raw','fresh','plain','unprepared','uncooked','cooked','boiled','steamed','roasted','baked','broiled','grilled','drained','skin','skinless','bone','boneless','meat','only','whole','light','dark','regular','unsalted','salted','solid','edible','portion','flesh','yellow','red','green','white','ripe'];
+// Words that mark a processed or compound product rather than the whole food
+const FOOD_PROCESSED_WORDS=['bread','cake','pie','muffin','cookie','biscuit','brownie','pastry','donut','doughnut','waffle','pancake','cereal','granola','bar','chip','crisp','cracker','snack','candy','candied','chocolate','sorbet','popsicle','pudding','custard','yogurt','jam','jelly','preserve','marmalade','syrup','sauce','dressing','soup','stew','casserole','pizza','sandwich','burrito','taco','nugget','patty','loaf','roll','bun','tart','smoothie','shake','juice','drink','beverage','soda','cocktail','liqueur','wine','beer','powder','powdered','extract','flavored','flavoured','flavor','flavour','artificial','imitation','substitute','mix','dehydrated','freezedried','concentrate','puree','canned','fried','breaded','battered','glazed','sweetened','pickled','babyfood','baby','infant','formula','junior','strained','toddler','supplement','topping','filling','frosting','spread','dip','dessert','pretzel','popcorn','crouton','fastfood','restaurant','sliced','deli','luncheon','cured','smoked','seasoned','marinated','processed'];
+
+function foodNorm(s){
+  return String(s||'').toLowerCase()
+    .replace(/[‘’]/g,"'")
+    .replace(/[^a-z0-9,]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+// Crude singulariser so "banana" matches USDA's "Bananas, raw"
+function foodSingular(w){
+  if(w.length>4&&/ies$/.test(w))return w.slice(0,-3)+'y';
+  if(w.length>4&&/(ches|shes|sses|xes|zes)$/.test(w))return w.slice(0,-2);
+  if(w.length>3&&/s$/.test(w)&&!/(ss|us|is)$/.test(w))return w.slice(0,-1);
+  return w;
+}
+function foodTokens(s){
+  return foodNorm(s).split(/[\s,]+/).filter(Boolean).map(foodSingular);
+}
+
+function foodRelevanceScore(name,query,source){
+  const nName=foodNorm(name);
+  if(!nName)return -999;
+  const qTok=foodTokens(query);
+  if(!qTok.length)return 0;
+  const nTok=foodTokens(nName);
+  // The "head noun" is everything before the first comma — USDA puts the plain
+  // food there and pushes preparation detail into the later clauses.
+  const headTok=foodTokens(nName.split(',')[0]);
   let score=0;
-  // Exact match to first word is best (e.g. "Banana, raw" for "banana")
-  if(firstWord===q)score+=100;
-  else if(n.startsWith(q))score+=70;
-  else if(n.includes(', '+q)||n.includes(' '+q+','))score+=40;
-  else if(n.includes(q))score+=10;
-  // Penalize longer/more complex names (more commas = more processed/specific)
-  const commaCount=(n.match(/,/g)||[]).length;
-  score-=commaCount*3;
-  // Penalize very long names (likely branded/compound products)
-  score-=Math.max(0,n.length-30)*0.2;
-  // Slight bonus for "raw" or basic prep words
-  if(/\braw\b/.test(n))score+=5;
+
+  // 1. Every search word should be present, and the earlier the better
+  qTok.forEach(t=>{
+    const idx=nTok.indexOf(t);
+    if(idx>=0){score+=40-Math.min(idx,8)*3;return;}
+    // partial credit for a prefix match so mid-typing ("banan") still ranks,
+    // and for the reverse ("oatmeal" against USDA's "Cereals, oats, ...")
+    let pi=t.length>=4?nTok.findIndex(x=>x.startsWith(t)):-1;
+    if(pi<0)pi=nTok.findIndex(x=>x.length>=3&&t.startsWith(x));
+    if(pi<0){score-=60;return;}
+    score+=20-Math.min(pi,8)*2;
+  });
+
+  // 2. Head noun matching the query is the signature of a plain entry
+  const headStr=headTok.join(' '),qStr=qTok.join(' ');
+  if(headStr===qStr)score+=60;
+  else if(headStr.startsWith(qStr+' '))score+=30;
+  else if(qTok.every(t=>headTok.indexOf(t)>=0))score+=20;
+
+  // 3. Each extra descriptive word makes the item more specific than asked for
+  const noise=nTok.filter(t=>qTok.indexOf(t)<0&&FOOD_STOPWORDS.indexOf(t)<0&&FOOD_NEUTRAL_WORDS.indexOf(t)<0);
+  score-=noise.length*6;
+
+  // 4. Processed-product words are a hard penalty — unless the user asked for
+  //    one, so "banana bread" still finds banana bread
+  const processed=nTok.filter(t=>FOOD_PROCESSED_WORDS.indexOf(t)>=0&&qTok.indexOf(t)<0);
+  score-=processed.length*45;
+  // No processed markers at all = a whole food. This is what lifts USDA's
+  // comma-split generics ("Fish, salmon, Atlantic, wild, raw") above tidily
+  // named products ("Salmon, pink, canned") that win the head-match bonus.
+  if(!processed.length)score+=15;
+
+  // 5. Nudge toward the plainest preparation
+  if(/\braw\b/.test(nName))score+=14;
+  else if(/\b(cooked|boiled|steamed|roasted)\b/.test(nName))score+=5;
+  if(source==='off')score-=10; // a branded item is rarely the generic answer
   return score;
 }
 
+// Sort by relevance, drop the clearly-irrelevant tail, cap the list
+function rankFoods(items,query,limit){
+  const scored=items.map(f=>({f,s:foodRelevanceScore(f.name,query,f.source)}))
+    .sort((a,b)=>b.s-a.s);
+  if(!scored.length)return[];
+  const best=scored[0].s;
+  // Keep the near-misses (they may be what the user meant) but cut the tail that
+  // is missing a search word outright, e.g. "Milk shakes" for "banana"
+  const keep=scored.filter(x=>x.s>=-40&&x.s>=best-140);
+  // Always leave at least 3 candidates: some USDA entries match on data we never
+  // see (its "oatmeal" is described as "Cereals, oats"), and scoring their names
+  // alone must never blank out a list the API did return.
+  return (keep.length>=3?keep:scored.slice(0,3)).slice(0,limit||6).map(x=>x.f);
+}
+
 async function fetchUSDA(query){
-  try{
-    const res=await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&dataType=Foundation,SR%20Legacy&pageSize=10&api_key=${USDA_KEY}`);
+  const url=allWords=>`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}`
+    +`&dataType=Foundation,SR%20Legacy&pageSize=50${allWords?'&requireAllWords=true':''}&api_key=${USDA_KEY}`;
+  const run=async allWords=>{
+    const res=await fetch(url(allWords));
     const data=await res.json();
-    if(!data.foods?.length)return[];
-    return data.foods.map(f=>{
+    return data.foods||[];
+  };
+  try{
+    // Ask for a wide pool (50, not 10) so our own ranking has something to work
+    // with — USDA's own ordering is what buries "Bananas, raw" behind the rest.
+    let foods=await run(true);
+    // requireAllWords finds nothing for partial words mid-typing, so retry loose
+    if(!foods.length)foods=await run(false);
+    if(!foods.length)return[];
+    const items=foods.map(f=>{
       const nutrByName={};
       f.foodNutrients?.forEach(n=>{
         const key=NUTR_MAP[n.nutrientId]||NUTR_MAP[n.nutrientNumber];
         if(key)nutrByName[key]=n.value||0;
       });
       return{source:'usda',name:f.description,category:f.foodCategory||'',nutrients:nutrByName,servingSize:null,brand:null};
-    }).filter(f=>f.nutrients.cals)
-      .sort((a,b)=>foodRelevanceScore(b.name,query)-foodRelevanceScore(a.name,query))
-      .slice(0,6);
+    }).filter(f=>f.nutrients.cals);
+    return rankFoods(items,query,6);
   }catch(e){return[];}
 }
 
 async function fetchOpenFoodFacts(query){
   try{
-    const res=await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=6&fields=product_name,brands,nutriments,serving_size,serving_quantity`);
+    const res=await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=30&fields=product_name,brands,nutriments,serving_size,serving_quantity`);
     const data=await res.json();
     if(!data.products?.length)return[];
-    return data.products.filter(p=>p.product_name&&p.nutriments?.['energy-kcal_100g']).map(p=>{
+    const items=data.products.filter(p=>p.product_name&&p.nutriments?.['energy-kcal_100g']).map(p=>{
       const nm=p.nutriments;
       const nutrients={
         cals:nm['energy-kcal_100g']||0,
@@ -2055,8 +2154,9 @@ async function fetchOpenFoodFacts(query){
       const servingG=parseFloat(p.serving_quantity)||null;
       const serving=p.serving_size||null;
       return{source:'off',name:p.product_name,brand:p.brands||'',nutrients,servingSize:serving,servingGrams:servingG,category:''};
-    }).sort((a,b)=>foodRelevanceScore(b.name,query)-foodRelevanceScore(a.name,query))
-      .slice(0,6);
+    });
+    // Keep the branded block short so generic foods stay at the top of the list
+    return rankFoods(items,query,4);
   }catch(e){return[];}
 }
 
@@ -2181,83 +2281,243 @@ function addFoodMeal(){
 
 function closeFoodResults(){const el=document.getElementById('foodResults');if(el)el.classList.remove('open');}
 document.addEventListener('click',e=>{if(!e.target.closest('#foodResults')&&!e.target.closest('#foodSearchInput'))closeFoodResults();});
-let barcodeStream=null;
-let barcodeInterval=null;
+// ── BARCODE SCANNING ──
+// iOS Safari has no BarcodeDetector, and decoding a live video stream with
+// ZXing/QuaggaJS there fails because the frames are low-res and motion-blurred.
+// Instead we hand off to the native iOS camera with
+// <input type="file" capture="environment">, which returns one sharp
+// full-resolution still, and decode that single frame. Note the file input only
+// *captures* the photo — a JS decoder still reads it — but decoding one crisp
+// 12MP photo succeeds where 30 blurry frames a second did not.
+let _zxingLoader=null;
 
-async function openBarcodeScanner(){
+function loadZXing(){
+  if(window.ZXing)return Promise.resolve();
+  if(_zxingLoader)return _zxingLoader;
+  _zxingLoader=new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+    s.onload=()=>res();
+    s.onerror=()=>{_zxingLoader=null;rej(new Error('Could not load the barcode decoder — check your connection.'));};
+    document.head.appendChild(s);
+  });
+  return _zxingLoader;
+}
+
+function setBarcodeStatus(msg,spinner){
+  const el=document.getElementById('barcodeStatus');if(!el)return;
+  el.innerHTML=spinner?'<span class="search-spinner"></span>'+escHtml(msg):escHtml(msg);
+}
+
+function openBarcodeScanner(){
   const wrap=document.getElementById('barcodeScannerWrap');
-  const video=document.getElementById('barcodeVideo');
-  const canvas=document.getElementById('barcodeCanvas');
-  const status=document.getElementById('barcodeStatus');
+  if(!wrap)return;
+  const title=document.getElementById('barcodeTitle');
+  if(title)title.textContent=window._scanTarget==='supplement'?'Scan a supplement barcode':'Scan a barcode';
   wrap.style.display='block';
-  status.textContent='Starting camera…';
+  setBarcodeStatus('');
+  clearBarcodePreview();
+  const manual=document.getElementById('barcodeManualInput');
+  if(manual)manual.value='';
+  // Warm the decoder up while the user is still framing the shot
+  loadZXing().catch(()=>{});
+  wrap.scrollIntoView({behavior:'smooth',block:'center'});
+}
 
+function clearBarcodePreview(){
+  const prev=document.getElementById('barcodePreview');
+  if(!prev)return;
+  if(prev.dataset.objurl){URL.revokeObjectURL(prev.dataset.objurl);delete prev.dataset.objurl;}
+  prev.removeAttribute('src');
+  prev.style.display='none';
+}
+
+// keepTarget: the supplement flow needs window._scanTarget to survive the close
+// that happens just before lookupBarcode() runs
+function closeBarcodeScanner(keepTarget){
+  const wrap=document.getElementById('barcodeScannerWrap');
+  if(wrap)wrap.style.display='none';
+  ['barcodeCameraInput','barcodeLibraryInput'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  clearBarcodePreview();
+  if(!keepTarget)window._scanTarget=null;
+}
+
+function submitManualBarcode(){
+  const el=document.getElementById('barcodeManualInput');if(!el)return;
+  const code=(el.value||'').replace(/\D/g,'');
+  if(code.length<6){setBarcodeStatus('Enter at least 6 digits from under the barcode.');return;}
+  closeBarcodeScanner(true);
+  lookupBarcode(normalizeBarcode(code));
+}
+
+function loadImageEl(src){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>res(img);
+    img.onerror=()=>rej(new Error('that photo could not be opened'));
+    img.src=src;
+  });
+}
+
+async function onBarcodeImagePicked(input){
+  const file=input.files&&input.files[0];
+  input.value='';
+  if(!file)return;
+  setBarcodeStatus('Reading barcode…',true);
+  clearBarcodePreview();
+  const objUrl=URL.createObjectURL(file);
   try{
-    barcodeStream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:'environment'}},
-      audio:false
-    });
-    video.srcObject=barcodeStream;
-    video.muted=true;
-    video.playsInline=true;
-    await video.play();
-    status.textContent='Loading barcode scanner…';
-
-    // Load ZXing from CDN
-    if(!window.ZXingBrowser){
-      await new Promise((res,rej)=>{
-        const s=document.createElement('script');
-        s.src='https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js';
-        s.onload=res;s.onerror=rej;
-        document.head.appendChild(s);
-      });
+    const img=await loadImageEl(objUrl);
+    const prev=document.getElementById('barcodePreview');
+    if(prev){prev.src=objUrl;prev.dataset.objurl=objUrl;prev.style.display='block';}
+    const code=await decodeBarcodeFromImage(img);
+    if(!code){
+      setBarcodeStatus('No barcode found in that photo. Get closer so it fills the frame, keep it straight, or type the numbers below.');
+      return;
     }
-
-    status.textContent='Point camera at barcode';
-
-    const codeReader=new ZXingBrowser.BrowserMultiFormatReader();
-    barcodeInterval=setInterval(async()=>{
-      if(video.readyState<video.HAVE_ENOUGH_DATA)return;
-      try{
-        canvas.width=video.videoWidth;
-        canvas.height=video.videoHeight;
-        const ctx=canvas.getContext('2d');
-        ctx.drawImage(video,0,0);
-        const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-        const result=await codeReader.decodeFromImageData(imgData);
-        if(result){
-          const code=result.getText();
-          clearInterval(barcodeInterval);
-          barcodeInterval=null;
-          closeBarcodeScanner();
-          lookupBarcode(code);
-        }
-      }catch(e){
-        // NotFoundException is normal — no barcode in frame yet
-      }
-    },300);
-
+    setBarcodeStatus('Found '+code+' — looking it up…',true);
+    closeBarcodeScanner(true);
+    lookupBarcode(code);
   }catch(e){
-    if(e.name==='NotAllowedError'){
-      status.textContent='Camera access denied. Go to Settings → Safari → Camera → Allow, then try again.';
-    } else if(e.name==='NotFoundError'){
-      status.textContent='No camera found on this device.';
-    } else {
-      status.textContent='Camera error: '+(e.message||e.name||'unknown error');
-    }
+    URL.revokeObjectURL(objUrl);
+    setBarcodeStatus('Could not read the photo: '+(e.message||'unknown error'));
   }
 }
 
-function closeBarcodeScanner(){
-  if(barcodeInterval){clearInterval(barcodeInterval);barcodeInterval=null;}
-  if(barcodeStream){
-    barcodeStream.getTracks().forEach(t=>{t.stop();});
-    barcodeStream=null;
+// OpenFoodFacts stores UPC-A as a 13-digit EAN, so pad the leading zero
+function normalizeBarcode(raw){
+  const code=String(raw||'').trim();
+  if(/^\d{12}$/.test(code))return '0'+code;
+  return code;
+}
+
+// Standard GTIN check digit (works for GTIN-8/12/13/14)
+function gtinChecksumOk(code){
+  const d=code.split('').map(Number);
+  const check=d.pop();
+  let sum=0,mult=3;
+  for(let i=d.length-1;i>=0;i--){sum+=d[i]*mult;mult=mult===3?1:3;}
+  return (10-(sum%10))%10===check;
+}
+
+// Guards against misreads: scanning across a rotated barcode can produce a
+// plausible-looking but wrong code, and a silent lookup of the wrong product is
+// worse than a "try again". Real product codes are 8/12/13/14 digits.
+function isPlausibleBarcode(code){
+  if(!/^\d+$/.test(code))return false;
+  if([8,12,13,14].indexOf(code.length)<0)return false;
+  // UPC-E's 8 digits carry the check digit of its expanded UPC-A form, so the
+  // plain GTIN-8 sum does not apply — ZXing has already verified it internally.
+  if(code.length===8)return true;
+  return gtinChecksumOk(code);
+}
+
+// Redraw the photo cropped / rotated / scaled / contrast-boosted for one attempt
+function barcodeCanvasFrom(img,o){
+  o=o||{};
+  const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;
+  const sx=Math.round((o.cropX||0)*iw),sy=Math.round((o.cropY||0)*ih);
+  const sw=Math.max(1,Math.round((o.cropW||1)*iw)),sh=Math.max(1,Math.round((o.cropH||1)*ih));
+  const scale=Math.min(1,(o.maxDim||1600)/Math.max(sw,sh));
+  const dw=Math.max(1,Math.round(sw*scale)),dh=Math.max(1,Math.round(sh*scale));
+  const c=document.createElement('canvas');
+  c.width=o.rotate?dh:dw;
+  c.height=o.rotate?dw:dh;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
+  if(o.rotate){
+    ctx.translate(c.width/2,c.height/2);
+    ctx.rotate(Math.PI/2);
+    ctx.drawImage(img,sx,sy,sw,sh,-dw/2,-dh/2,dw,dh);
+  } else {
+    ctx.drawImage(img,sx,sy,sw,sh,0,0,dw,dh);
   }
-  const video=document.getElementById('barcodeVideo');
-  if(video){video.srcObject=null;video.load();}
-  const wrap=document.getElementById('barcodeScannerWrap');
-  if(wrap)wrap.style.display='none';
+  if(o.boost){
+    // Grey + hard contrast stretch rescues dim or glossy-packaging shots
+    try{
+      const d=ctx.getImageData(0,0,c.width,c.height);
+      const px=d.data;
+      for(let i=0;i<px.length;i+=4){
+        const g=px[i]*0.299+px[i+1]*0.587+px[i+2]*0.114;
+        const v=g<110?0:g>150?255:Math.round((g-110)/40*255);
+        px[i]=px[i+1]=px[i+2]=v;
+      }
+      ctx.putImageData(d,0,0);
+    }catch(e){/* tainted canvas — keep the unboosted version */}
+  }
+  return c;
+}
+
+function zxingHints(){
+  const h=new Map();
+  h.set(ZXing.DecodeHintType.TRY_HARDER,true);
+  // Product formats only. ITF and CODE_39 have no checksum and misfire badly
+  // when the scan line crosses a rotated barcode — they were returning
+  // confident-looking garbage like "952199" for a valid EAN-13.
+  h.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
+    ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.CODE_128,
+  ]);
+  return h;
+}
+
+async function zxingDecodeCanvas(canvas){
+  try{
+    const reader=new ZXing.BrowserMultiFormatReader(zxingHints());
+    let result=null,bitmapPathUsable=false;
+    // Decode the canvas pixels directly — re-encoding a 12MP photo to a data
+    // URL on every attempt is what would make this crawl on a phone.
+    try{
+      const lum=new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+      const bmp=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+      bitmapPathUsable=true;
+      result=reader.decodeBitmap(bmp);
+    }catch(e){
+      // A throw after the bitmap was built is just "no barcode in this pass".
+      // Only a missing/broken luminance source justifies the slower URL path.
+      if(bitmapPathUsable)return null;
+    }
+    if(!result&&bitmapPathUsable)return null;
+    if(!result)result=await reader.decodeFromImageUrl(canvas.toDataURL('image/jpeg',0.92));
+    if(!result)return null;
+    const code=normalizeBarcode(typeof result.getText==='function'?result.getText():result.text);
+    return isPlausibleBarcode(code)?code:null;
+  }catch(e){return null;}
+}
+
+async function decodeBarcodeFromImage(img){
+  // Chrome/Android have a native detector — much faster when it exists
+  if(window.BarcodeDetector){
+    try{
+      const det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+      const found=await det.detect(img);
+      for(let i=0;i<(found||[]).length;i++){
+        const code=normalizeBarcode(found[i].rawValue);
+        if(isPlausibleBarcode(code))return code;
+      }
+    }catch(e){/* unsupported format list or detector unavailable — fall through */}
+  }
+  await loadZXing();
+  // Several passes over the same still: whole frame, centre crops (people aim
+  // the barcode at the middle), rotated for a vertical barcode, then boosted.
+  const attempts=[
+    {maxDim:1600},
+    {maxDim:1600,cropY:0.2,cropH:0.6},
+    {maxDim:1600,cropX:0.1,cropW:0.8,cropY:0.3,cropH:0.4},
+    {maxDim:1600,rotate:true},
+    {maxDim:1600,rotate:true,cropX:0.2,cropW:0.6},
+    {maxDim:1600,boost:true},
+    {maxDim:1600,boost:true,cropY:0.2,cropH:0.6},
+    {maxDim:900},
+  ];
+  for(let i=0;i<attempts.length;i++){
+    const code=await zxingDecodeCanvas(barcodeCanvasFrom(img,attempts[i]));
+    if(code)return code;
+  }
+  return null;
 }
 
 async function lookupBarcode(barcode){
