@@ -769,6 +769,12 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
       </div>
       <div class="section-head">Recent days</div>
       <div id="historyList"></div>
+
+      <div class="section-head">Your data</div>
+      <div class="lift-graph-card">
+        <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.6;margin-bottom:0.7rem;">Everything is stored only on this device. Keep a copy before removing the app from your Home Screen, clearing Safari data, or changing phones.</div>
+        <button class="btn-primary" style="width:100%;" onclick="openBackup()">Backup &amp; restore</button>
+      </div>
     </div>
     <!-- LIFTS -->
     <div class="fitness-pane" id="paneLifts">
@@ -1134,6 +1140,22 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
     </div>
   </div>
 </div>
+<!-- BACKUP & RESTORE MODAL -->
+<div class="modal-bg" id="modalBackup" onclick="bgClose(event,'modalBackup')">
+  <div class="modal" style="max-height:85vh;overflow-y:auto;"><div class="modal-handle"></div>
+    <h3>Backup &amp; restore</h3>
+    <p class="modal-hint">Your habits, meals, workouts and logs live only in this browser. Copy the text below somewhere safe — Notes, or email it to yourself.</p>
+    <textarea class="field-input" id="backupText" rows="5" spellcheck="false" autocapitalize="off" autocorrect="off" style="resize:none;font-size:0.7rem;font-family:ui-monospace,Menlo,monospace;"></textarea>
+    <div id="backupStatus" style="font-size:0.78rem;color:var(--text-muted);min-height:1.15rem;margin-bottom:0.6rem;line-height:1.5;"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modalBackup')">Close</button>
+      <button class="btn-primary" onclick="copyBackup()">Copy backup</button>
+    </div>
+    <p class="modal-hint" style="margin-top:1rem;">To restore, paste a saved backup into the box above, then tap below. This replaces everything currently saved on this device.</p>
+    <button class="btn-danger" style="width:100%;" onclick="restoreBackup()">Restore from pasted text</button>
+  </div>
+</div>
+
 <div class="modal-bg" id="modalDelete" onclick="bgClose(event,'modalDelete')">
   <div class="modal"><div class="modal-handle"></div><h3 id="deleteTitle">Delete?</h3>
     <p class="modal-hint" id="deleteMsg">This cannot be undone.</p>
@@ -5113,6 +5135,60 @@ function switchFitness(p){
   if(p==='Cardio')renderCardioHistory();
 }
 
+// ── BACKUP & RESTORE ──
+// Everything is localStorage on one device. Removing a Home Screen web app or
+// clearing Safari data can take it all with it, so there has to be a way out.
+const APP_KEYS=['hb7','cp7','nt7','ml7','cg7','wo7','wh7','sl7','energy7','sa7','ch7',
+  'mr7','wt7','rl7','books7','activeBookId7','sl7study','sm7','wl7','waterAmounts7',
+  'supp7','ng7','waterGoal','navPad'];
+
+function openBackup(){
+  const payload={_app:'hard-choices',_version:1,_exported:new Date().toISOString(),data:{}};
+  let found=0;
+  APP_KEYS.forEach(k=>{
+    try{const v=localStorage.getItem(k);if(v!==null){payload.data[k]=v;found++;}}catch(e){}
+  });
+  const el=document.getElementById('backupText');
+  el.value=JSON.stringify(payload);
+  document.getElementById('backupStatus').textContent=
+    found+' item'+(found===1?'':'s')+' · '+Math.max(1,Math.round(el.value.length/1024))+' KB';
+  openModal('Backup');
+}
+
+async function copyBackup(){
+  const el=document.getElementById('backupText');
+  const st=document.getElementById('backupStatus');
+  try{
+    await navigator.clipboard.writeText(el.value);
+    st.textContent='Copied. Paste it into Notes or email it to yourself now.';
+  }catch(e){
+    // Clipboard API needs a secure context and can be refused — fall back to
+    // selecting the text so it can be copied by hand
+    el.focus();el.setSelectionRange(0,el.value.length);
+    st.textContent='Could not copy automatically. The text is selected — hold and choose Copy.';
+  }
+}
+
+function restoreBackup(){
+  const st=document.getElementById('backupStatus');
+  const raw=(document.getElementById('backupText').value||'').trim();
+  let parsed=null;
+  try{parsed=JSON.parse(raw);}catch(e){st.textContent='That is not valid backup text.';return;}
+  if(!parsed||parsed._app!=='hard-choices'||!parsed.data||typeof parsed.data!=='object'){
+    st.textContent='That does not look like a backup from this app.';return;
+  }
+  const n=Object.keys(parsed.data).length;
+  if(!n){st.textContent='That backup is empty — nothing to restore.';return;}
+  if(!confirm('Replace everything currently saved on this device with this backup ('+n+' items)?'))return;
+  let ok=0;
+  Object.keys(parsed.data).forEach(k=>{
+    if(APP_KEYS.indexOf(k)<0)return; // ignore anything not ours
+    try{localStorage.setItem(k,parsed.data[k]);ok++;}catch(e){}
+  });
+  st.textContent='Restored '+ok+' items. Reloading…';
+  setTimeout(()=>location.reload(),700);
+}
+
 // ── MODALS ──
 function openModal(n){document.getElementById('modal'+n).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -5154,9 +5230,19 @@ function fitBottomNav(){
   // innerHeight being short of the screen, but that shortfall can come from the
   // TOP of the screen, so it drew the wrong conclusion. Rather than keep
   // inferring, the value is user-adjustable and remembered — see tapNavDebug.
-  const pad=navPadOverride===null?Math.max(19,inset):Math.max(0,navPadOverride);
+  const pad=navPadOverride===null?Math.max(19,inset):navPadOverride;
   const saved=navPadOverride===null?NaN:navPadOverride;
-  nav.style.paddingBottom=pad+'px';
+  // A positive value pads inside the bar. A NEGATIVE value pushes the whole bar
+  // below the viewport edge — the only way to reach the dead strip when iOS
+  // hands the page a viewport shorter than the screen. If that strip cannot be
+  // painted the bar simply clips, which is immediately visible.
+  if(pad>=0){
+    nav.style.bottom='0px';
+    nav.style.paddingBottom=pad+'px';
+  } else {
+    nav.style.bottom=pad+'px';
+    nav.style.paddingBottom='0px';
+  }
   const r=nav.getBoundingClientRect();
   const vv=window.visualViewport;
   // The decisive number is gapUnderBar: if it is 0 the bar reaches the bottom of
@@ -5194,7 +5280,7 @@ function paintNavDebug(){
     d.style.cssText='position:fixed;left:6px;right:6px;bottom:110px;z-index:999;background:#1F1F27;border:1px solid #7C6EFA;border-radius:8px;padding:9px;font-size:10px;color:#F0EFF8;line-height:1.6;-webkit-user-select:text;user-select:text;word-break:break-word;';
     document.body.appendChild(d);
   }
-  const cur=parseInt(getComputedStyle(nav).paddingBottom,10)||0;
+  const cur=navPadOverride===null?(parseInt(getComputedStyle(nav).paddingBottom,10)||0):navPadOverride;
   const shortBy=((window.screen&&window.screen.height)||0)-window.innerHeight;
   const standalone=navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
   // The page cannot draw outside its own viewport, so a short viewport is the
@@ -5202,9 +5288,19 @@ function paintNavDebug(){
   const verdict=(standalone&&shortBy>8)
     ?'<div style="color:#FBBF24;margin-bottom:5px;">Viewport is '+shortBy+'pt shorter than the screen — the page cannot reach the bottom. Re-add to the Home Screen.</div>'
     :(standalone?'<div style="color:#4ADE80;margin-bottom:5px;">Viewport covers the full screen.</div>':'');
-  d.innerHTML=verdict+'<div style="margin-bottom:7px;">'+escHtml(nav.dataset.navFit||'')+'</div>'
+  // Date key vs the header date. If these ever disagree, the day is being filed
+  // under the wrong date and entries will carry over to tomorrow.
+  const k=todayKey();
+  const hdr=document.getElementById('dateLabel');
+  const now=new Date();
+  const expected=dateKey(now);
+  const dateOk=k===expected;
+  const dateLine='<div style="color:'+(dateOk?'#4ADE80':'#F87171')+';margin-bottom:5px;">'
+    +'Filing under '+escHtml(k)+' · header says '+escHtml(hdr?hdr.textContent:'')
+    +(dateOk?' · match':' · MISMATCH')+'</div>';
+  d.innerHTML=verdict+dateLine+'<div style="margin-bottom:7px;">'+escHtml(nav.dataset.navFit||'')+'</div>'
     +'<div style="display:flex;align-items:center;gap:7px;">'
-    +'<span style="font-family:\'Syne\',sans-serif;font-weight:600;">Bar spacing</span>'
+    +'<span style="font-family:\'Syne\',sans-serif;font-weight:600;">Bar position</span>'
     +'<button onclick="nudgeNavPad(-4)" style="width:30px;height:28px;border-radius:7px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:14px;">&minus;</button>'
     +'<span id="navPadVal" style="min-width:34px;text-align:center;font-family:\'Syne\',sans-serif;font-weight:600;color:var(--accent);">'+cur+'px</span>'
     +'<button onclick="nudgeNavPad(4)" style="width:30px;height:28px;border-radius:7px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:14px;">+</button>'
@@ -5217,8 +5313,10 @@ function paintNavDebug(){
 // with the view height, this lets the bar be put exactly where it looks right.
 function nudgeNavPad(delta){
   const nav=document.querySelector('.bottom-nav');if(!nav)return;
-  const cur=parseInt(getComputedStyle(nav).paddingBottom,10)||0;
-  navPadOverride=Math.max(0,Math.min(120,cur+delta));
+  // Track the value itself rather than reading it back off the element, so it
+  // stays correct once negative values move the bar instead of padding it
+  const cur=navPadOverride===null?(parseInt(getComputedStyle(nav).paddingBottom,10)||0):navPadOverride;
+  navPadOverride=Math.max(-80,Math.min(120,cur+delta));
   sv('navPad',String(navPadOverride));
   fitBottomNav();
   paintNavDebug();
