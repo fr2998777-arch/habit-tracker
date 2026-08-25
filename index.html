@@ -5258,7 +5258,11 @@ function fitBottomNav(){
     'insetBottom '+inset,
     'applied '+pad,
     'shortfall '+shortfall,
-    'accountedFor '+(insetTop+inset>=shortfall-4?'yes':'NO — '+(shortfall-insetTop-inset)+'pt unexplained'),
+    // Reporting only whether a number happens to equal the shortfall was
+    // misleading — insetTop matching it does NOT prove the missing height is at
+    // the top. Only pushing the bar below the edge and seeing it get covered
+    // shows where the dead strip actually is.
+    'missing '+(shortfall>8?shortfall+'pt of screen unreachable':'none'),
     'barTop '+Math.round(r.top),
     'barBottom '+Math.round(r.bottom),
     'barHeight '+Math.round(r.height),
