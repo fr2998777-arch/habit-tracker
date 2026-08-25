@@ -385,7 +385,7 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
 <body>
 <div class="header">
   <div class="header-top">
-    <div><div class="app-title" style="font-family:'Gilda Display',serif;font-size:1.35rem;font-weight:400;">Hard Choices, Easy Life.</div><div class="date-label" id="dateLabel"></div></div>
+    <div><div class="app-title" style="font-family:'Gilda Display',serif;font-size:1.35rem;font-weight:400;">Hard Choices, Easy Life.</div><div class="date-label" id="dateLabel" onclick="tapNavDebug()"></div></div>
     <div class="progress-pill" id="progressPill">0 / 0</div>
   </div>
   <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
@@ -491,6 +491,10 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
               <div style="position:absolute;left:7%;right:7%;top:30%;height:38%;border:2px solid rgba(192,132,252,0.95);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,0.4);"></div>
             </div>
             <div id="barcodeLiveStatus" style="position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:11px;color:rgba(255,255,255,0.9);text-shadow:0 1px 3px #000;">Point at a barcode</div>
+            <!-- Only shown when the camera actually reports a torch -->
+            <button id="barcodeTorchBtn" onclick="toggleTorch()" style="display:none;position:absolute;top:8px;right:8px;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.45);color:#fff;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0;">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6l-1 6h3l-8 14 2-9H8z"/></svg>
+            </button>
           </div>
           <input type="file" id="barcodeCameraInput" accept="image/*" capture="environment" style="display:none;" onchange="onBarcodeImagePicked(this)"/>
           <input type="file" id="barcodeLibraryInput" accept="image/*" style="display:none;" onchange="onBarcodeImagePicked(this)"/>
@@ -1247,15 +1251,27 @@ let activeWorkoutId=null;
 let sessionSets={};
 let pendingDel={type:null,id:null};
 
+// Local calendar date as YYYY-MM-DD.
+// toISOString() returns UTC, which has already rolled over to tomorrow while it
+// is still this evening anywhere west of Greenwich. That filed anything logged
+// after ~8pm Eastern under tomorrow's date, so it reappeared as "today" the next
+// morning and the day never seemed to turn over. Every day key must be local.
+const dateKey=d=>{
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+};
+
 const todayKey=()=>{
   const now=new Date();
-  const calToday=now.toISOString().slice(0,10);
+  const calToday=dateKey(now);
   // If it's past midnight, check if yesterday's night routine was completed
   // If not, still consider it yesterday's day
   if(now.getHours()<6){
     const yesterday=new Date(now);
     yesterday.setDate(yesterday.getDate()-1);
-    const yKey=yesterday.toISOString().slice(0,10);
+    const yKey=dateKey(yesterday);
     const nightDone=(completions[yKey]||[]).includes('night');
     if(!nightDone)return yKey;
   }
@@ -1401,7 +1417,7 @@ function getStreak(habitId){
   let d=new Date(todayStr+'T12:00:00');
   d.setDate(d.getDate()-1);
   while(true){
-    const key=d.toISOString().slice(0,10);
+    const key=dateKey(d);
     if(!(completions[key]||[]).includes(habitId))break;
     streak++;
     d.setDate(d.getDate()-1);
@@ -1724,7 +1740,7 @@ function renderNutritionHistory(){
   for(let i=1;i<=7;i++){
     const d=new Date(today+'T12:00:00');
     d.setDate(d.getDate()-i);
-    days.push(d.toISOString().slice(0,10));
+    days.push(dateKey(d));
   }
 
   const dayData=days.map(date=>{
@@ -2521,6 +2537,7 @@ async function startLiveScan(){
     await video.play();
     await zx;
     liveActive=true;liveFrames=0;liveCropIdx=0;
+    setupTorch();
     setLiveStatus('Point at a barcode');
     const hint=document.getElementById('barcodeHint');
     if(hint)hint.textContent='Hold the barcode inside the box. It scans by itself — no need to tap.';
@@ -2534,8 +2551,62 @@ async function startLiveScan(){
   }
 }
 
+// ── TORCH / FLASHLIGHT ──
+// Not every camera exposes one, and Safari only gained the torch constraint
+// fairly recently, so the button is only shown when the track reports it.
+let torchOn=false;
+
+function torchTrack(){
+  if(!liveStream)return null;
+  const t=liveStream.getVideoTracks()[0];
+  return t||null;
+}
+
+function setupTorch(){
+  const btn=document.getElementById('barcodeTorchBtn');
+  if(!btn)return;
+  torchOn=false;
+  btn.style.display='none';
+  const track=torchTrack();
+  if(!track||typeof track.getCapabilities!=='function')return;
+  let caps=null;
+  try{caps=track.getCapabilities();}catch(e){return;}
+  if(caps&&caps.torch){
+    btn.style.display='flex';
+    paintTorchBtn();
+  }
+}
+
+function paintTorchBtn(){
+  const btn=document.getElementById('barcodeTorchBtn');
+  if(!btn)return;
+  btn.style.background=torchOn?'#FBBF24':'rgba(0,0,0,0.45)';
+  btn.style.color=torchOn?'#0E0E12':'#fff';
+  btn.style.borderColor=torchOn?'#FBBF24':'rgba(255,255,255,0.35)';
+}
+
+async function toggleTorch(){
+  const track=torchTrack();
+  if(!track)return;
+  try{
+    await track.applyConstraints({advanced:[{torch:!torchOn}]});
+    torchOn=!torchOn;
+    paintTorchBtn();
+  }catch(e){
+    setLiveStatus('This camera will not let the flashlight turn on');
+  }
+}
+
 function stopLiveScan(){
   liveActive=false;
+  // Release the torch before dropping the track or it can stay lit
+  if(torchOn){
+    const t=torchTrack();
+    if(t){try{t.applyConstraints({advanced:[{torch:false}]});}catch(e){}}
+    torchOn=false;
+  }
+  const tb=document.getElementById('barcodeTorchBtn');
+  if(tb)tb.style.display='none';
   if(liveTimer){clearTimeout(liveTimer);liveTimer=null;}
   if(liveStream){
     try{liveStream.getTracks().forEach(t=>t.stop());}catch(e){}
@@ -3774,7 +3845,7 @@ function renderWeeklySummary(){
   const getRange=(daysBack,count)=>{
     return [...Array(count)].map((_,i)=>{
       const d=new Date(now);d.setDate(d.getDate()-(daysBack-1-i));
-      return d.toISOString().slice(0,10);
+      return dateKey(d);
     });
   };
   const thisWeek=getRange(7,7);
@@ -4400,7 +4471,7 @@ function renderWeekDots(){
   let html='<div class="morning-week-dots">';
   for(let i=6;i>=0;i--){
     const d=new Date(today);d.setDate(today.getDate()-i);
-    const key=d.toISOString().slice(0,10);
+    const key=dateKey(d);
     const isToday=i===0;
     const log=morningLog[key];
     const done=log?MORNING_ITEMS.filter(k=>log[k]).length:0;
@@ -5072,17 +5143,55 @@ function fitBottomNav(){
   const viewAlreadyInset=inset>0&&shortfall>=inset-4;
   const pad=viewAlreadyInset?11:Math.max(19,inset);
   nav.style.paddingBottom=pad+'px';
-  nav.dataset.navFit=(viewAlreadyInset?'view-already-inset':'full-screen')
-    +' · reported inset '+inset+'px · applied '+pad+'px · innerHeight '+window.innerHeight+' · screen '+screenH;
-  // Open the app with ?navdebug on the URL to read these numbers on the phone
-  if(location.search.indexOf('navdebug')>=0){
-    let d=document.getElementById('navDebugBox');
-    if(!d){
-      d=document.createElement('div');d.id='navDebugBox';
-      d.style.cssText='position:fixed;left:6px;right:6px;bottom:120px;z-index:999;background:#1F1F27;border:1px solid #7C6EFA;border-radius:8px;padding:6px 8px;font-size:10px;color:#F0EFF8;line-height:1.5;';
-      document.body.appendChild(d);
-    }
-    d.textContent=nav.dataset.navFit;
+  const r=nav.getBoundingClientRect();
+  const vv=window.visualViewport;
+  // The decisive number is gapUnderBar: if it is 0 the bar reaches the bottom of
+  // the screen and the space is inside it; if it is positive the bar is not
+  // reaching the bottom at all, which is a completely different problem.
+  nav.dataset.navFit=[
+    (viewAlreadyInset?'view-already-inset':'full-screen'),
+    'inset '+inset,
+    'applied '+pad,
+    'barTop '+Math.round(r.top),
+    'barBottom '+Math.round(r.bottom),
+    'barHeight '+Math.round(r.height),
+    'gapUnderBar '+Math.round(window.innerHeight-r.bottom),
+    'innerH '+window.innerHeight,
+    'screenH '+screenH,
+    'visualH '+(vv?Math.round(vv.height):'n/a'),
+    'standalone '+(navigator.standalone===true?'yes':(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches?'yes':'no')),
+    'dpr '+(window.devicePixelRatio||1)
+  ].join(' · ');
+  if(navDebugOn)paintNavDebug();
+}
+
+// Diagnostics readout. A home-screen web app has no address bar, so ?navdebug
+// cannot be typed there — tapping the date in the header five times works too.
+let navDebugOn=location.search.indexOf('navdebug')>=0;
+let navDebugTaps=0,navDebugTimer=null;
+
+function paintNavDebug(){
+  const nav=document.querySelector('.bottom-nav');if(!nav)return;
+  let d=document.getElementById('navDebugBox');
+  if(!navDebugOn){if(d)d.remove();return;}
+  if(!d){
+    d=document.createElement('div');d.id='navDebugBox';
+    d.style.cssText='position:fixed;left:6px;right:6px;bottom:110px;z-index:999;background:#1F1F27;border:1px solid #7C6EFA;border-radius:8px;padding:7px 9px;font-size:10px;color:#F0EFF8;line-height:1.6;-webkit-user-select:text;user-select:text;word-break:break-word;';
+    d.onclick=()=>{navDebugOn=false;paintNavDebug();};
+    document.body.appendChild(d);
+  }
+  d.textContent=nav.dataset.navFit||'';
+}
+
+function tapNavDebug(){
+  navDebugTaps++;
+  clearTimeout(navDebugTimer);
+  navDebugTimer=setTimeout(()=>{navDebugTaps=0;},3000);
+  if(navDebugTaps>=5){
+    navDebugTaps=0;
+    navDebugOn=!navDebugOn;
+    fitBottomNav();
+    paintNavDebug();
   }
 }
 window.addEventListener('resize',fitBottomNav);
