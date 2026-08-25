@@ -504,11 +504,13 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
         </div>
         <div class="food-selected-row" id="foodSelectedRow" style="display:none;">
           <div class="food-selected-name" id="foodSelectedName"></div>
+          <!-- One-tap portions (whole bottle / one serving) for packaged items -->
+          <div id="foodQuickAmounts" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:0.5rem;"></div>
           <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;flex-wrap:wrap;">
-            <input class="field-input" id="foodGramsInput" type="number" placeholder="grams" min="1" max="9999" step="1"
+            <input class="field-input" id="foodGramsInput" type="number" placeholder="amount" min="1" max="9999" step="1"
               style="margin-bottom:0;width:90px;text-align:center;padding:0.65rem 0.5rem;"
-              oninput="calcFoodCals()"/>
-            <span style="color:var(--text-muted);font-size:0.85rem;white-space:nowrap;">g</span>
+              oninput="onFoodAmountTyped()"/>
+            <span id="foodUnitLabel" style="color:var(--text-muted);font-size:0.85rem;white-space:nowrap;">g</span>
             <div class="food-cal-preview" id="foodCalPreview">— kcal</div>
             <button class="add-meal-btn" onclick="addFoodMeal()">Add</button>
           </div>
@@ -1904,7 +1906,11 @@ function saveGoal(){
 }
 
 // ── FOOD SEARCH (USDA FoodData Central) ──
-const USDA_KEY='DEMO_KEY';
+// Personal FoodData Central key (1,000 requests/hour). This file is served
+// publicly by GitHub Pages, so this key is visible in the page source — it is
+// free and carries no billing, and can be reissued at
+// fdc.nal.usda.gov/api-key-signup if it ever needs rotating. Only referenced here.
+const USDA_KEY='HiRuHAld2eMZu1mc5yesm01gIQy6bNPmAK3pDfIL';
 let foodSearchTimer=null;
 let selectedFood=null;
 
@@ -2024,9 +2030,12 @@ async function fetchFoodResults(query){
 // should rank under the plain "with skin" entry
 const FOOD_STOPWORDS=['a','an','and','or','of','with','in','on','the','from','plus','all','type','ns','nfs','includes','including','not','further','specified','prepared','commercial','commercially','usda','commodity','food','distribution','program','foods'];
 // Plain-preparation words — descriptive but not a sign of a processed product
-const FOOD_NEUTRAL_WORDS=['raw','fresh','plain','unprepared','uncooked','cooked','boiled','steamed','roasted','baked','broiled','grilled','drained','skin','skinless','bone','boneless','meat','only','whole','light','dark','regular','unsalted','salted','solid','edible','portion','flesh','yellow','red','green','white','ripe'];
+// Colour and part words ('white', 'red', 'yolk') are deliberately NOT neutral:
+// "Egg, white, raw" is a different food from "Egg, whole, raw" (52 vs 143 kcal),
+// so they must cost the same as any other narrowing qualifier.
+const FOOD_NEUTRAL_WORDS=['raw','fresh','plain','unprepared','uncooked','cooked','boiled','steamed','roasted','baked','broiled','grilled','drained','skin','skinless','bone','boneless','meat','only','whole','regular','unsalted','salted','solid','edible','portion','ripe'];
 // Words that mark a processed or compound product rather than the whole food
-const FOOD_PROCESSED_WORDS=['bread','cake','pie','muffin','cookie','biscuit','brownie','pastry','donut','doughnut','waffle','pancake','cereal','granola','bar','chip','crisp','cracker','snack','candy','candied','chocolate','sorbet','popsicle','pudding','custard','yogurt','jam','jelly','preserve','marmalade','syrup','sauce','dressing','soup','stew','casserole','pizza','sandwich','burrito','taco','nugget','patty','loaf','roll','bun','tart','smoothie','shake','juice','drink','beverage','soda','cocktail','liqueur','wine','beer','powder','powdered','extract','flavored','flavoured','flavor','flavour','artificial','imitation','substitute','mix','dehydrated','freezedried','concentrate','puree','canned','fried','breaded','battered','glazed','sweetened','pickled','babyfood','baby','infant','formula','junior','strained','toddler','supplement','topping','filling','frosting','spread','dip','dessert','pretzel','popcorn','crouton','fastfood','restaurant','sliced','deli','luncheon','cured','smoked','seasoned','marinated','processed'];
+const FOOD_PROCESSED_WORDS=['bread','cake','pie','muffin','cookie','biscuit','brownie','pastry','donut','doughnut','waffle','pancake','granola','bar','chip','crisp','cracker','snack','candy','candied','chocolate','sorbet','popsicle','pudding','custard','yogurt','jam','jelly','preserve','marmalade','syrup','sauce','dressing','soup','stew','casserole','pizza','sandwich','burrito','taco','nugget','patty','loaf','roll','bun','tart','smoothie','shake','juice','drink','beverage','soda','cocktail','liqueur','wine','beer','powder','powdered','extract','flavored','flavoured','flavor','flavour','artificial','imitation','substitute','mix','dehydrated','freezedried','concentrate','puree','canned','fried','breaded','battered','glazed','sweetened','pickled','babyfood','baby','infant','formula','junior','strained','toddler','supplement','topping','filling','frosting','spread','dip','dessert','pretzel','popcorn','crouton','fastfood','restaurant','sliced','deli','luncheon','cured','smoked','seasoned','marinated','processed'];
 
 function foodNorm(s){
   return String(s||'').toLowerCase()
@@ -2034,7 +2043,9 @@ function foodNorm(s){
     // USDA tags many of its staple entries with "(Includes foods for USDA's
     // Food Distribution Program)". That boilerplate marks a basic food, so
     // counting its words as specificity penalised exactly the wrong entries.
-    .replace(/\([^)]*\)/g,' ')
+    // Only this phrase is dropped — other parentheticals ("(honey glazed)")
+    // carry real meaning about how processed the product is.
+    .replace(/\(includes foods[^)]*\)/g,' ')
     .replace(/[^a-z0-9,]+/g,' ')
     .replace(/\s+/g,' ')
     .trim();
@@ -2046,9 +2057,38 @@ function foodSingular(w){
   if(w.length>3&&/s$/.test(w)&&!/(ss|us|is)$/.test(w))return w.slice(0,-1);
   return w;
 }
-function foodTokens(s){
-  return foodNorm(s).split(/[\s,]+/).filter(Boolean).map(foodSingular);
+// Everyday names for foods USDA files under a different word. Applied to the
+// search text and the entry names alike, so "oatmeal" matches "Cereals, oats".
+const FOOD_SYNONYMS={oatmeal:'oat',porridge:'oat',yoghurt:'yogurt',prawn:'shrimp',
+  mince:'ground',aubergine:'eggplant',courgette:'zucchini',rocket:'arugula',
+  soda:'soft',pop:'soft',crisps:'chip',chickpea:'garbanzo'};
+function foodWord(w){
+  const s=foodSingular(w);
+  return FOOD_SYNONYMS[s]||s;
 }
+function foodTokens(s){
+  return foodNorm(s).split(/[\s,]+/).filter(Boolean).map(foodWord);
+}
+// The word lists must be keyed the same way tokens are, or they silently stop
+// matching. "cookies" singularises to "cooky" (the -ies→-y rule, right for
+// candies→candy but wrong for cookies→cookie) and so never equalled the
+// 'cookie' entry — which is why oatmeal COOKIES outranked plain oats.
+// Registering both endings makes the lookup immune to which rule applies.
+function foodWordVariants(w){
+  const base=foodWord(w);
+  const out=[w,base];
+  if(/y$/.test(base))out.push(base.slice(0,-1)+'ie');
+  if(/ie$/.test(base))out.push(base.slice(0,-2)+'y');
+  return out;
+}
+const buildWordSet=list=>{
+  const s=new Set();
+  list.forEach(w=>foodWordVariants(w).forEach(v=>s.add(v)));
+  return s;
+};
+const FOOD_STOP_SET=buildWordSet(FOOD_STOPWORDS);
+const FOOD_NEUTRAL_SET=buildWordSet(FOOD_NEUTRAL_WORDS);
+const FOOD_PROCESSED_SET=buildWordSet(FOOD_PROCESSED_WORDS);
 
 function foodRelevanceScore(name,query,source){
   const nName=foodNorm(name);
@@ -2080,8 +2120,8 @@ function foodRelevanceScore(name,query,source){
   else if(qTok.every(t=>headTok.indexOf(t)>=0))score+=20;
 
   // 3. Each extra descriptive word makes the item more specific than asked for
-  const extras=nTok.filter(t=>qTok.indexOf(t)<0&&FOOD_STOPWORDS.indexOf(t)<0);
-  const noise=extras.filter(t=>FOOD_NEUTRAL_WORDS.indexOf(t)<0);
+  const extras=nTok.filter(t=>qTok.indexOf(t)<0&&!FOOD_STOP_SET.has(t));
+  const noise=extras.filter(t=>!FOOD_NEUTRAL_SET.has(t));
   score-=noise.length*6;
   // Plain-prep words cost a little too, so the shortest description of a food
   // wins: "Apples, raw, without skin" over "...without skin, cooked, boiled"
@@ -2089,8 +2129,12 @@ function foodRelevanceScore(name,query,source){
 
   // 4. Processed-product words are a hard penalty — unless the user asked for
   //    one, so "banana bread" still finds banana bread
-  const processed=nTok.filter(t=>FOOD_PROCESSED_WORDS.indexOf(t)>=0&&qTok.indexOf(t)<0);
-  score-=processed.length*45;
+  const processed=nTok.filter(t=>FOOD_PROCESSED_SET.has(t)&&qTok.indexOf(t)<0);
+  // Weighted heavily: USDA writes generics with the qualifier late ("Chicken,
+  // broilers or fryers, breast, ... raw") while products put it in the head
+  // ("Chicken breast, roll, oven-roasted"), so the product wins the head-match
+  // bonus and only a firm penalty puts the actual cut of meat back on top.
+  score-=processed.length*70;
   // No processed markers at all = a whole food. This is what lifts USDA's
   // comma-split generics ("Fish, salmon, Atlantic, wild, raw") above tidily
   // named products ("Salmon, pink, canned") that win the head-match bonus.
@@ -2105,8 +2149,18 @@ function foodRelevanceScore(name,query,source){
 
 // Sort by relevance, drop the clearly-irrelevant tail, cap the list
 function rankFoods(items,query,limit){
-  const scored=items.map(f=>({f,s:foodRelevanceScore(f.name,query,f.source)}))
+  const ranked=items.map(f=>({f,s:foodRelevanceScore(f.name,query,f.source)}))
     .sort((a,b)=>b.s-a.s);
+  // Foundation and SR Legacy both carry e.g. "Broccoli, raw" — keep only the
+  // first (highest scoring) of each name so the list isn't padded with repeats
+  const seen=new Set();
+  const scored=[];
+  for(let i=0;i<ranked.length;i++){
+    const k=foodNorm(ranked[i].f.name)+'|'+(ranked[i].f.brand||'');
+    if(seen.has(k))continue;
+    seen.add(k);
+    scored.push(ranked[i]);
+  }
   if(!scored.length)return[];
   const best=scored[0].s;
   // Keep the near-misses (they may be what the user meant) but cut the tail that
@@ -2163,40 +2217,66 @@ async function fetchUSDA(query){
   }
 }
 
+// Open Food Facts stores every nutrient except energy in GRAMS per 100g.
+// The app's own units are mg for some nutrients and mcg for others, so each
+// needs its own factor — the previous code multiplied several mcg nutrients by
+// 1000 instead of 1000000, making vitamin A/D/K/B9/B12 and selenium read as ~0.
+const OFF_G=1000,OFF_MG=1000,OFF_MCG=1000000;
+function offNutrients(nm){
+  nm=nm||{};
+  const v=(k,f)=>(parseFloat(nm[k])||0)*f;
+  return {
+    cals:parseFloat(nm['energy-kcal_100g'])||0,
+    protein:parseFloat(nm['proteins_100g'])||0,
+    carbs:parseFloat(nm['carbohydrates_100g'])||0,
+    fat:parseFloat(nm['fat_100g'])||0,
+    fiber:parseFloat(nm['fiber_100g'])||0,
+    sugar:parseFloat(nm['sugars_100g'])||0,
+    sodium:v('sodium_100g',OFF_MG),
+    potassium:v('potassium_100g',OFF_MG),
+    calcium:v('calcium_100g',OFF_MG),
+    iron:v('iron_100g',OFF_MG),
+    magnesium:v('magnesium_100g',OFF_MG),
+    zinc:v('zinc_100g',OFF_MG),
+    phosphorus:v('phosphorus_100g',OFF_MG),
+    selenium:v('selenium_100g',OFF_MCG),
+    vitA:v('vitamin-a_100g',OFF_MCG),
+    vitC:v('vitamin-c_100g',OFF_MG),
+    vitD:v('vitamin-d_100g',OFF_MCG),
+    vitE:v('vitamin-e_100g',OFF_MG),
+    vitK:v('vitamin-k_100g',OFF_MCG),
+    vitB6:v('vitamin-b6_100g',OFF_MG),
+    vitB9:(parseFloat(nm['folates_100g'])||parseFloat(nm['vitamin-b9_100g'])||0)*OFF_MCG,
+    vitB12:v('vitamin-b12_100g',OFF_MCG),
+  };
+}
+
+// Package/serving info, so a scanned bottle can be logged as a bottle
+function offPortions(p){
+  const unit=(p.product_quantity_unit||'').toLowerCase();
+  const qty=parseFloat(p.product_quantity)||null;
+  const txt=((p.quantity||'')+' '+(p.serving_size||'')).toLowerCase();
+  const isLiquid=unit==='ml'||unit==='l'||/\bml\b|\bcl\b|\bliter|\blitre|fl\.? ?oz/.test(txt);
+  return {
+    packageAmount:qty&&qty>0&&qty<=5000?qty:null,
+    packageLabel:p.quantity||null,
+    servingGrams:parseFloat(p.serving_quantity)||null,
+    servingSize:p.serving_size||null,
+    unit:isLiquid?'ml':'g',
+  };
+}
+
 async function fetchOpenFoodFacts(query){
   try{
-    const res=await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=30&fields=product_name,brands,nutriments,serving_size,serving_quantity`);
+    const res=await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=30&fields=product_name,brands,nutriments,serving_size,serving_quantity,quantity,product_quantity,product_quantity_unit`);
     const data=await res.json();
     if(!data.products?.length)return[];
     const items=data.products.filter(p=>p.product_name&&p.nutriments?.['energy-kcal_100g']).map(p=>{
-      const nm=p.nutriments;
-      const nutrients={
-        cals:nm['energy-kcal_100g']||0,
-        protein:nm['proteins_100g']||0,
-        carbs:nm['carbohydrates_100g']||0,
-        fat:nm['fat_100g']||0,
-        fiber:nm['fiber_100g']||0,
-        sugar:nm['sugars_100g']||0,
-        sodium:(nm['sodium_100g']||0)*1000,
-        potassium:(nm['potassium_100g']||0)*1000,
-        calcium:(nm['calcium_100g']||0)*1000,
-        iron:(nm['iron_100g']||0)*1000,
-        magnesium:(nm['magnesium_100g']||0)*1000,
-        zinc:(nm['zinc_100g']||0)*1000,
-        selenium:(nm['selenium_100g']||0)*1000,
-        phosphorus:(nm['phosphorus_100g']||0)*1000,
-        vitA:nm['vitamin-a_100g']||0,
-        vitC:(nm['vitamin-c_100g']||0)*1000,
-        vitD:(nm['vitamin-d_100g']||0)*1000,
-        vitE:(nm['vitamin-e_100g']||0)*1000,
-        vitK:(nm['vitamin-k_100g']||0)*1000,
-        vitB6:(nm['vitamin-b6_100g']||0)*1000,
-        vitB9:(nm['folates_100g']||nm['vitamin-b9_100g']||0)*1000,
-        vitB12:(nm['vitamin-b12_100g']||0)*1000,
-      };
-      const servingG=parseFloat(p.serving_quantity)||null;
-      const serving=p.serving_size||null;
-      return{source:'off',name:p.product_name,brand:p.brands||'',nutrients,servingSize:serving,servingGrams:servingG,category:''};
+      const nutrients=offNutrients(p.nutriments);
+      const pt=offPortions(p);
+      return{source:'off',name:p.product_name,brand:p.brands||'',nutrients,
+        servingSize:pt.servingSize,servingGrams:pt.servingGrams,
+        packageAmount:pt.packageAmount,packageLabel:pt.packageLabel,unit:pt.unit,category:''};
     });
     // Keep the branded block short so generic foods stay at the top of the list
     return rankFoods(items,query,4);
@@ -2235,8 +2315,12 @@ const COMMON_SERVINGS=[
 ];
 
 function getCommonServing(foodName){
+  // USDA names the entry "Bananas, raw" but these patterns are singular, and
+  // /^banana\b/ cannot match "Bananas" — the word boundary falls after the "s".
+  // Test a de-pluralised copy too, or this table never fires on USDA results.
+  const singular=String(foodName||'').replace(/^([A-Za-z]+)s\b/,'$1');
   for(const [pattern,grams,label] of COMMON_SERVINGS){
-    if(pattern.test(foodName))return{grams,label};
+    if(pattern.test(foodName)||pattern.test(singular))return{grams,label};
   }
   return null;
 }
@@ -2249,34 +2333,51 @@ function selectFood(i){
   document.getElementById('foodSearchInput').value=food.name+(food.brand?' ('+food.brand+')':'');
   document.getElementById('foodSelectedName').textContent=food.name+(food.brand?' — '+food.brand:'');
 
-  // Pre-fill serving grams if available
   const gramsInput=document.getElementById('foodGramsInput');
-  if(food.servingGrams){
-    gramsInput.value=food.servingGrams;
-  } else {
-    const common=food.source==='usda'?getCommonServing(food.name):null;
-    gramsInput.value=common?common.grams:'';
-  }
+  const unit=food.unit||'g';
+  document.getElementById('foodUnitLabel').textContent=unit;
+  gramsInput.placeholder=unit==='ml'?'ml':'grams';
 
-  // Show per-100g info + serving size button if available
+  // Build one-tap portions. Scanning a bottle should log a bottle — nobody
+  // weighs a drink — so the whole package leads and is pre-filled.
+  const common=food.source==='usda'?getCommonServing(food.name):null;
+  const quick=[];
+  if(food.packageAmount)quick.push({amt:food.packageAmount,label:'Whole '+(unit==='ml'?'bottle':'pack')+' · '+(food.packageLabel||food.packageAmount+unit)});
+  if(food.servingGrams&&food.servingGrams!==food.packageAmount)quick.push({amt:food.servingGrams,label:'1 serving · '+food.servingGrams+unit});
+  if(common)quick.push({amt:common.grams,label:common.label});
+  quick.push({amt:100,label:'100'+unit});
+
+  const qEl=document.getElementById('foodQuickAmounts');
+  qEl.innerHTML=quick.map((q,qi)=>`<button class="range-btn${qi===0?' active':''}" data-amt="${q.amt}" onclick="setFoodAmount(${q.amt},this)">${escHtml(q.label)}</button>`).join('');
+
+  // Default to the first (best) portion so the common case needs no typing
+  gramsInput.value=quick[0].amt;
+
   const per100=document.getElementById('foodPer100');
-  if(food.servingSize&&food.servingGrams){
-    per100.innerHTML=`${Math.round(food.nutrients.cals)} kcal per 100g &nbsp;·&nbsp; <span style="color:var(--accent);">1 serving = ${food.servingGrams}g${food.servingSize?' ('+food.servingSize+')':''}</span> — <button onclick="document.getElementById('foodGramsInput').value='${food.servingGrams}';calcFoodCals();" style="background:none;border:none;color:var(--accent);font-size:0.75rem;cursor:pointer;text-decoration:underline;padding:0;">use serving</button>`;
-  } else {
-    const common=food.source==='usda'?getCommonServing(food.name):null;
-    if(common){
-      gramsInput.value=common.grams;
-      per100.innerHTML=`${Math.round(food.nutrients.cals)} kcal per 100g &nbsp;·&nbsp; <span style="color:var(--accent);">${common.label} ≈ ${common.grams}g</span> — <button onclick="document.getElementById('foodGramsInput').value='${common.grams}';calcFoodCals();" style="background:none;border:none;color:var(--accent);font-size:0.75rem;cursor:pointer;text-decoration:underline;padding:0;">use ${common.label}</button>`;
-    } else {
-      per100.textContent=`${Math.round(food.nutrients.cals)} kcal per 100g`;
-    }
-  }
+  const per=`${Math.round(food.nutrients.cals)} kcal per 100${unit}`;
+  per100.textContent=food.packageLabel?`${per} · package: ${food.packageLabel}`:per;
 
   document.getElementById('foodSelectedRow').style.display='block';
-  document.getElementById('foodCalPreview').textContent='— kcal';
   document.getElementById('foodNutrPreview').innerHTML='';
   calcFoodCals();
-  gramsInput.focus();
+}
+
+// Tapping a portion chip fills the amount and highlights that chip
+function setFoodAmount(amt,btn){
+  const input=document.getElementById('foodGramsInput');
+  if(input)input.value=amt;
+  document.querySelectorAll('#foodQuickAmounts .range-btn').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  calcFoodCals();
+}
+
+// Typing a custom amount clears the chip highlight
+function onFoodAmountTyped(){
+  const v=document.getElementById('foodGramsInput').value;
+  document.querySelectorAll('#foodQuickAmounts .range-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.amt===String(v));
+  });
+  calcFoodCals();
 }
 
 function calcFoodCals(){
@@ -2301,7 +2402,8 @@ function calcFoodCals(){
 function addFoodMeal(){
   if(!selectedFood){alert('Please search and select a food first.');return;}
   const g=parseFloat(document.getElementById('foodGramsInput').value);
-  if(!g||g<=0){alert('Please enter the weight in grams.');return;}
+  const unit=selectedFood.unit||'g';
+  if(!g||g<=0){alert('Please enter an amount in '+(unit==='ml'?'millilitres':'grams')+'.');return;}
   const factor=g/100;
   const n=selectedFood.nutrients;
   const cals=Math.round((n.cals||0)*factor);
@@ -2310,7 +2412,7 @@ function addFoodMeal(){
     const key=NUTR_MAP[id];
     if(key!=='cals'&&n[key])nutrients[key]=+(n[key]*factor).toFixed(2);
   });
-  const name=`${selectedFood.name} (${g}g)`;
+  const name=`${selectedFood.name} (${g}${unit})`;
   const ms=getTodayMeals();ms.push({name,cals,grams:g,nutrients,per100cals:+(selectedFood.nutrients.cals||0)});setTodayMeals(ms);
   selectedFood=null;
   document.getElementById('foodSearchInput').value='';
@@ -2318,6 +2420,7 @@ function addFoodMeal(){
   document.getElementById('foodGramsInput').value='';
   document.getElementById('foodCalPreview').textContent='— kcal';
   document.getElementById('foodNutrPreview').innerHTML='';
+  document.getElementById('foodQuickAmounts').innerHTML='';
   document.getElementById('foodSearchStatus').textContent='';
   renderCals();
 }
@@ -2623,39 +2726,18 @@ async function lookupBarcode(barcode){
       return;
     }
     const p=data.product;
-    const nm=p.nutriments||{};
-    const nutrients={
-      cals:nm['energy-kcal_100g']||0,
-      protein:nm['proteins_100g']||0,
-      carbs:nm['carbohydrates_100g']||0,
-      fat:nm['fat_100g']||0,
-      fiber:nm['fiber_100g']||0,
-      sugar:nm['sugars_100g']||0,
-      sodium:(nm['sodium_100g']||0)*1000,
-      potassium:(nm['potassium_100g']||0)*1000,
-      calcium:(nm['calcium_100g']||0)*1000,
-      iron:(nm['iron_100g']||0)*1000,
-      magnesium:(nm['magnesium_100g']||0)*1000,
-      zinc:(nm['zinc_100g']||0)*1000,
-      selenium:(nm['selenium_100g']||0)*1000,
-      phosphorus:(nm['phosphorus_100g']||0)*1000,
-      vitA:nm['vitamin-a_100g']||0,
-      vitC:(nm['vitamin-c_100g']||0)*1000,
-      vitD:(nm['vitamin-d_100g']||0)*1000,
-      vitE:(nm['vitamin-e_100g']||0)*1000,
-      vitK:(nm['vitamin-k_100g']||0)*1000,
-      vitB6:(nm['vitamin-b6_100g']||0)*1000,
-      vitB9:(nm['folates_100g']||nm['vitamin-b9_100g']||0)*1000,
-      vitB12:(nm['vitamin-b12_100g']||0)*1000,
-    };
-    const servingG=parseFloat(p.serving_quantity)||null;
+    const nutrients=offNutrients(p.nutriments);
+    const pt=offPortions(p);
     const food={
       source:'scan',
       name:p.product_name||'Scanned product',
       brand:p.brands||'',
       nutrients,
-      servingSize:p.serving_size||null,
-      servingGrams:servingG,
+      servingSize:pt.servingSize,
+      servingGrams:pt.servingGrams,
+      packageAmount:pt.packageAmount,
+      packageLabel:pt.packageLabel,
+      unit:pt.unit,
       category:'',
     };
     // Route to supplement or food depending on scan target
@@ -3250,6 +3332,9 @@ function openAddSupplementModal(){
   document.getElementById('suppNameInput').value='';
   ['VitA','VitC','VitD','VitE','VitK','VitB6','VitB9','VitB12','Calcium','Iron','Magnesium','Zinc','Selenium','Phosphorus']
     .forEach(k=>{const el=document.getElementById('supp'+k);if(el)el.value='';});
+  // Restore the default hint — a prior scan may have replaced it
+  const hint=document.querySelector('#modalAddSupplement .modal-hint');
+  if(hint)hint.textContent='Enter the name and key nutrients from the label.';
   openModal('AddSupplement');
 }
 
@@ -3314,10 +3399,35 @@ function prefillSupplementFromFood(food){
   document.getElementById('suppNameInput').value=food.name+(food.brand?' — '+food.brand:'');
   const nm=food.nutrients||{};
   const map={vitA:'VitA',vitC:'VitC',vitD:'VitD',vitE:'VitE',vitK:'VitK',vitB6:'VitB6',vitB9:'VitB9',vitB12:'VitB12',calcium:'Calcium',iron:'Iron',magnesium:'Magnesium',zinc:'Zinc',selenium:'Selenium',phosphorus:'Phosphorus'};
+
+  // Open Food Facts values are per 100g. A tablet is ~1g, so pasting the
+  // per-100g figures straight into a per-dose form overstated everything by
+  // ~100x. Scale to one serving when the serving weight is known.
+  const perServing=food.servingGrams&&food.servingGrams>0?food.servingGrams/100:null;
+
+  let filled=0;
   Object.entries(map).forEach(([nk,ik])=>{
     const el=document.getElementById('supp'+ik);
-    if(el&&nm[nk])el.value=nm[nk];
+    if(!el)return;
+    const raw=nm[nk];
+    if(!raw){el.value='';return;}
+    const val=perServing?raw*perServing:raw;
+    el.value=+val.toFixed(3);
+    filled++;
   });
+
+  const hint=document.querySelector('#modalAddSupplement .modal-hint');
+  if(hint){
+    if(!filled){
+      // The common case for supplements: OFF is a *food* database and rarely
+      // carries vitamin panels, so say so instead of showing a blank form.
+      hint.innerHTML='<span style="color:var(--amber);">Found this product, but the database has no vitamin amounts for it.</span> Enter the amounts from the label below — they will be saved for one-tap logging.';
+    } else if(!perServing){
+      hint.innerHTML='<span style="color:var(--amber);">Amounts are per 100g, not per tablet.</span> The database did not list a serving size, so check these against the label before saving.';
+    } else {
+      hint.textContent='Prefilled per serving ('+food.servingGrams+'g) from the database. Check against the label before saving.';
+    }
+  }
   openModal('AddSupplement');
 }
 let _editSavedMealItems=[];
