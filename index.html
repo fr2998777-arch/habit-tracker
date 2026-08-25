@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Deliberately NOT black-translucent. With translucent, iOS sized this app's
+     view as (screen - status bar) but positioned it at the top of the screen,
+     leaving a 48pt strip at the BOTTOM that the page could not draw into - the
+     tab bar could never reach the bottom of the screen. Opaque makes iOS place
+     the view below the status bar instead, so it ends flush at the bottom. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Hard Choices, Easy Life">
 <!-- Colours the area outside the page, so a short viewport is not a bright band -->
 <meta name="theme-color" content="#0E0E12">
@@ -26,7 +31,10 @@
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:16px;-webkit-font-smoothing:antialiased;overscroll-behavior:none;}
 body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill-available;}
 
-.header{padding:env(safe-area-inset-top, 3rem) 1.5rem 1rem;padding-top:max(env(safe-area-inset-top), 3rem);position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);}
+/* The floor is small because the status bar is now opaque and sits above the
+   page. If the view ever extends under the status bar again, env() supplies the
+   larger value, so this stays correct either way. */
+.header{padding:env(safe-area-inset-top, 1.25rem) 1.5rem 1rem;padding-top:max(env(safe-area-inset-top), 1.25rem);position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);}
 .header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.25rem;}
 .app-title{font-family:'Syne',sans-serif;font-size:1.75rem;font-weight:700;letter-spacing:-0.02em;}
 .date-label{font-size:0.82rem;color:var(--text-muted);letter-spacing:0.06em;text-transform:uppercase;margin-top:0.25rem;}
