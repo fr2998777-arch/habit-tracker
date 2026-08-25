@@ -5222,6 +5222,10 @@ function fitBottomNav(){
   probe.style.cssText='position:fixed;left:0;bottom:0;width:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-bottom);';
   document.body.appendChild(probe);
   const inset=probe.offsetHeight||0;
+  // Measure the other three too: knowing whether the missing height sits at the
+  // TOP or the BOTTOM of the screen decides whether the bar is misplaced at all
+  probe.style.height='env(safe-area-inset-top)';
+  const insetTop=probe.offsetHeight||0;
   probe.remove();
   const screenH=(window.screen&&window.screen.height)||0;
   const shortfall=screenH>0?screenH-window.innerHeight:0;
@@ -5250,9 +5254,11 @@ function fitBottomNav(){
   // reaching the bottom at all, which is a completely different problem.
   nav.dataset.navFit=[
     (isNaN(saved)?'auto':'custom'),
-    'inset '+inset,
+    'insetTop '+insetTop,
+    'insetBottom '+inset,
     'applied '+pad,
     'shortfall '+shortfall,
+    'accountedFor '+(insetTop+inset>=shortfall-4?'yes':'NO — '+(shortfall-insetTop-inset)+'pt unexplained'),
     'barTop '+Math.round(r.top),
     'barBottom '+Math.round(r.bottom),
     'barHeight '+Math.round(r.height),
