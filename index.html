@@ -4,8 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Hard Choices, Easy Life">
+<!-- Colours the area outside the page, so a short viewport is not a bright band -->
+<meta name="theme-color" content="#0E0E12">
 <title>Hard Choices, Easy Life</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&family=Gilda+Display&display=swap" rel="stylesheet">
 <style>
@@ -5192,7 +5195,14 @@ function paintNavDebug(){
     document.body.appendChild(d);
   }
   const cur=parseInt(getComputedStyle(nav).paddingBottom,10)||0;
-  d.innerHTML='<div style="margin-bottom:7px;">'+escHtml(nav.dataset.navFit||'')+'</div>'
+  const shortBy=((window.screen&&window.screen.height)||0)-window.innerHeight;
+  const standalone=navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
+  // The page cannot draw outside its own viewport, so a short viewport is the
+  // one problem no amount of bar spacing can fix — call it out explicitly.
+  const verdict=(standalone&&shortBy>8)
+    ?'<div style="color:#FBBF24;margin-bottom:5px;">Viewport is '+shortBy+'pt shorter than the screen — the page cannot reach the bottom. Re-add to the Home Screen.</div>'
+    :(standalone?'<div style="color:#4ADE80;margin-bottom:5px;">Viewport covers the full screen.</div>':'');
+  d.innerHTML=verdict+'<div style="margin-bottom:7px;">'+escHtml(nav.dataset.navFit||'')+'</div>'
     +'<div style="display:flex;align-items:center;gap:7px;">'
     +'<span style="font-family:\'Syne\',sans-serif;font-weight:600;">Bar spacing</span>'
     +'<button onclick="nudgeNavPad(-4)" style="width:30px;height:28px;border-radius:7px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:14px;">&minus;</button>'
