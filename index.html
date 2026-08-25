@@ -482,12 +482,21 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:-webkit-fill
              full-resolution photo and decode that instead of a video stream. -->
         <div id="barcodeScannerWrap" style="display:none;margin-top:0.6rem;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:0.85rem;">
           <div style="font-family:'Syne',sans-serif;font-size:0.9rem;font-weight:600;margin-bottom:0.2rem;" id="barcodeTitle">Scan a barcode</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.7rem;">Hold steady and fill the frame with the barcode. Good light, straight on.</div>
+          <div id="barcodeHint" style="font-size:0.75rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.7rem;">Hold steady and fill the frame with the barcode. Good light, straight on.</div>
+          <!-- Live camera scanner (Yuka / MyFitnessPal style): decodes frames as
+               you point, no shutter press. Falls back to the photo path below. -->
+          <div id="barcodeLiveWrap" style="display:none;position:relative;background:#000;border-radius:10px;overflow:hidden;margin-bottom:0.6rem;">
+            <video id="barcodeVideo" playsinline muted autoplay style="width:100%;height:190px;object-fit:cover;display:block;"></video>
+            <div style="position:absolute;inset:0;pointer-events:none;">
+              <div style="position:absolute;left:7%;right:7%;top:30%;height:38%;border:2px solid rgba(192,132,252,0.95);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,0.4);"></div>
+            </div>
+            <div id="barcodeLiveStatus" style="position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:11px;color:rgba(255,255,255,0.9);text-shadow:0 1px 3px #000;">Point at a barcode</div>
+          </div>
           <input type="file" id="barcodeCameraInput" accept="image/*" capture="environment" style="display:none;" onchange="onBarcodeImagePicked(this)"/>
           <input type="file" id="barcodeLibraryInput" accept="image/*" style="display:none;" onchange="onBarcodeImagePicked(this)"/>
           <div style="display:flex;gap:0.5rem;">
-            <button class="add-meal-btn" style="flex:2;padding:0.75rem 0.5rem;background:#C084FC;" onclick="document.getElementById('barcodeCameraInput').click()">Take photo</button>
-            <button class="btn-cancel" style="flex:1;padding:0.75rem 0.5rem;border-radius:10px;font-size:0.85rem;white-space:nowrap;" onclick="document.getElementById('barcodeLibraryInput').click()">Library</button>
+            <button id="barcodePhotoBtn" class="add-meal-btn" style="flex:2;padding:0.75rem 0.5rem;background:#C084FC;" onclick="stopLiveScan();document.getElementById('barcodeCameraInput').click()">Take photo</button>
+            <button class="btn-cancel" style="flex:1;padding:0.75rem 0.5rem;border-radius:10px;font-size:0.85rem;white-space:nowrap;" onclick="stopLiveScan();document.getElementById('barcodeLibraryInput').click()">Library</button>
           </div>
           <div id="barcodeStatus" style="font-size:0.78rem;color:var(--text-muted);min-height:1.1rem;margin-top:0.6rem;line-height:1.5;"></div>
           <img id="barcodePreview" alt="" style="display:none;width:100%;max-height:110px;object-fit:contain;border-radius:8px;margin-top:0.4rem;background:#0a0a0a;"/>
@@ -2471,10 +2480,137 @@ function openBarcodeScanner(){
   clearBarcodePreview();
   const manual=document.getElementById('barcodeManualInput');
   if(manual)manual.value='';
-  // Warm the decoder up while the user is still framing the shot
-  loadZXing().catch(()=>{});
   wrap.scrollIntoView({behavior:'smooth',block:'center'});
+  // Try the live camera straight away — this click is the user gesture iOS
+  // requires. If it is refused we silently stay on the photo path.
+  startLiveScan();
 }
+
+// ── LIVE CAMERA SCANNING ──
+// The earlier live attempt failed because it re-encoded each frame to a data
+// URL and decoded one heavily downscaled pass. Now that stills decode fine on
+// the same phone we know the decoder is good, so this reads the frame's pixels
+// directly and concentrates on the reticle area at full sensor resolution.
+let liveStream=null,liveTimer=null,liveActive=false,liveFrames=0,liveCropIdx=0;
+
+function setLiveStatus(msg){
+  const el=document.getElementById('barcodeLiveStatus');
+  if(el)el.textContent=msg;
+}
+
+async function startLiveScan(){
+  if(liveActive)return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return;
+  const video=document.getElementById('barcodeVideo');
+  const liveWrap=document.getElementById('barcodeLiveWrap');
+  if(!video||!liveWrap)return;
+  try{
+    liveWrap.style.display='block';
+    setLiveStatus('Starting camera…');
+    const zx=loadZXing();
+    liveStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},
+        width:{ideal:1920},height:{ideal:1080},
+        // a barcode fills little of the frame, so ask for the sharpest feed
+        frameRate:{ideal:30},advanced:[{focusMode:'continuous'}]},
+      audio:false
+    });
+    video.srcObject=liveStream;
+    video.setAttribute('playsinline','');
+    video.muted=true;
+    await video.play();
+    await zx;
+    liveActive=true;liveFrames=0;liveCropIdx=0;
+    setLiveStatus('Point at a barcode');
+    const hint=document.getElementById('barcodeHint');
+    if(hint)hint.textContent='Hold the barcode inside the box. It scans by itself — no need to tap.';
+    scanLiveFrame();
+  }catch(e){
+    // Permission denied, no camera, or an insecure origin: fall back quietly
+    stopLiveScan();
+    if(e&&e.name==='NotAllowedError'){
+      setBarcodeStatus('Camera access is off for this site. Allow it in Settings → Safari → Camera, or use Take photo below.');
+    }
+  }
+}
+
+function stopLiveScan(){
+  liveActive=false;
+  if(liveTimer){clearTimeout(liveTimer);liveTimer=null;}
+  if(liveStream){
+    try{liveStream.getTracks().forEach(t=>t.stop());}catch(e){}
+    liveStream=null;
+  }
+  const video=document.getElementById('barcodeVideo');
+  if(video){try{video.pause();}catch(e){}video.srcObject=null;}
+  const liveWrap=document.getElementById('barcodeLiveWrap');
+  if(liveWrap)liveWrap.style.display='none';
+}
+
+// Draw one region of the current video frame at native resolution
+function liveFrameCanvas(video,crop){
+  const vw=video.videoWidth,vh=video.videoHeight;
+  if(!vw||!vh)return null;
+  const sx=Math.round(crop.x*vw),sy=Math.round(crop.y*vh);
+  const sw=Math.max(1,Math.round(crop.w*vw)),sh=Math.max(1,Math.round(crop.h*vh));
+  const c=_bcCanvas||(_bcCanvas=document.createElement('canvas'));
+  c.width=sw;c.height=sh;
+  const ctx=c.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.drawImage(video,sx,sy,sw,sh,0,0,sw,sh);
+  return c;
+}
+
+// Regions tried in rotation — the reticle band first (where people aim), then
+// wider and tighter areas so an off-centre or small barcode is still caught
+const LIVE_CROPS=[
+  {x:0.05,y:0.28,w:0.90,h:0.42},
+  {x:0.00,y:0.00,w:1.00,h:1.00},
+  {x:0.20,y:0.34,w:0.60,h:0.30},
+  {x:0.05,y:0.10,w:0.90,h:0.80},
+];
+
+function scanLiveFrame(){
+  if(!liveActive)return;
+  const video=document.getElementById('barcodeVideo');
+  if(!video||video.readyState<2){liveTimer=setTimeout(scanLiveFrame,120);return;}
+  let code=null;
+  try{
+    const crop=LIVE_CROPS[liveCropIdx%LIVE_CROPS.length];
+    liveCropIdx++;liveFrames++;
+    const canvas=liveFrameCanvas(video,crop);
+    if(canvas)code=zxingDecodeCanvasSync(canvas);
+  }catch(e){/* keep scanning */}
+  if(code){onLiveScanHit(code);return;}
+  if(liveFrames===30)setLiveStatus('Move closer so the barcode fills the box');
+  if(liveFrames===90)setLiveStatus('Still looking — try more light, or tap Take photo');
+  liveTimer=setTimeout(scanLiveFrame,90);
+}
+
+function onLiveScanHit(code){
+  setLiveStatus('Found '+code);
+  stopLiveScan();
+  setBarcodeStatus('Found '+code+' — looking it up…',true);
+  closeBarcodeScanner(true);
+  lookupBarcode(code);
+}
+
+// Synchronous single-pass decode for live frames — the async data-URL fallback
+// would stall the loop, and a live feed simply retries on the next frame
+function zxingDecodeCanvasSync(canvas){
+  if(!window.ZXing)return null;
+  try{
+    const reader=new ZXing.BrowserMultiFormatReader(zxingHints());
+    const lum=new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+    const result=reader.decodeBitmap(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum)));
+    if(!result)return null;
+    const code=normalizeBarcode(typeof result.getText==='function'?result.getText():result.text);
+    return isPlausibleBarcode(code)?code:null;
+  }catch(e){return null;}
+}
+
+// Never leave the camera running in the background
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopLiveScan();});
 
 function clearBarcodePreview(){
   const prev=document.getElementById('barcodePreview');
@@ -2487,8 +2623,11 @@ function clearBarcodePreview(){
 // keepTarget: the supplement flow needs window._scanTarget to survive the close
 // that happens just before lookupBarcode() runs
 function closeBarcodeScanner(keepTarget){
+  stopLiveScan();
   const wrap=document.getElementById('barcodeScannerWrap');
   if(wrap)wrap.style.display='none';
+  const hint=document.getElementById('barcodeHint');
+  if(hint)hint.textContent='Hold steady and fill the frame with the barcode. Good light, straight on.';
   ['barcodeCameraInput','barcodeLibraryInput'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
@@ -2517,6 +2656,7 @@ async function onBarcodeImagePicked(input){
   const file=input.files&&input.files[0];
   input.value='';
   if(!file)return;
+  stopLiveScan(); // two camera consumers conflict on iOS
   setBarcodeStatus('Reading barcode…',true);
   clearBarcodePreview();
   const objUrl=URL.createObjectURL(file);
@@ -4911,8 +5051,45 @@ function updateDate(){
   document.getElementById('dateLabel').textContent=`${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
 }
 
+// ── BOTTOM NAV SAFE AREA ──
+// An iPhone home-screen web app sometimes gets a view that is ALREADY inset
+// above the home indicator, while env(safe-area-inset-bottom) still reports
+// 34pt. Padding by that inset then counts it twice and leaves a double gap
+// under the tab bar. Measure what the browser reports against how much of the
+// screen we actually occupy, and pad only by what is genuinely missing.
+function fitBottomNav(){
+  const nav=document.querySelector('.bottom-nav');if(!nav)return;
+  const probe=document.createElement('div');
+  probe.style.cssText='position:fixed;left:0;bottom:0;width:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-bottom);';
+  document.body.appendChild(probe);
+  const inset=probe.offsetHeight||0;
+  probe.remove();
+  const screenH=(window.screen&&window.screen.height)||0;
+  const shortfall=screenH>0?screenH-window.innerHeight:0;
+  // Only treat the view as pre-inset when the height we are missing actually
+  // matches the inset being reported. A desktop window or Safari's address bar
+  // also makes innerHeight smaller, and must not shrink the bar.
+  const viewAlreadyInset=inset>0&&shortfall>=inset-4;
+  const pad=viewAlreadyInset?11:Math.max(19,inset);
+  nav.style.paddingBottom=pad+'px';
+  nav.dataset.navFit=(viewAlreadyInset?'view-already-inset':'full-screen')
+    +' · reported inset '+inset+'px · applied '+pad+'px · innerHeight '+window.innerHeight+' · screen '+screenH;
+  // Open the app with ?navdebug on the URL to read these numbers on the phone
+  if(location.search.indexOf('navdebug')>=0){
+    let d=document.getElementById('navDebugBox');
+    if(!d){
+      d=document.createElement('div');d.id='navDebugBox';
+      d.style.cssText='position:fixed;left:6px;right:6px;bottom:120px;z-index:999;background:#1F1F27;border:1px solid #7C6EFA;border-radius:8px;padding:6px 8px;font-size:10px;color:#F0EFF8;line-height:1.5;';
+      document.body.appendChild(d);
+    }
+    d.textContent=nav.dataset.navFit;
+  }
+}
+window.addEventListener('resize',fitBottomNav);
+window.addEventListener('orientationchange',()=>setTimeout(fitBottomNav,300));
+
 // ── INIT ──
-updateDate();render();updateProgress();renderMorning();renderWeight();renderCals();renderCardioHistory();renderSleepHistory();renderSaunaHistory();prefillSauna();renderWorkoutList();renderStats();renderLiftProgress();renderSupplementsSection();renderEnergyScale();renderEnergyHistory();
+updateDate();render();updateProgress();renderMorning();renderWeight();renderCals();renderCardioHistory();renderSleepHistory();renderSaunaHistory();prefillSauna();renderWorkoutList();renderStats();renderLiftProgress();renderSupplementsSection();renderEnergyScale();renderEnergyHistory();fitBottomNav();
 </script>
 </body>
 </html>
